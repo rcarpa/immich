@@ -10,10 +10,12 @@ import 'package:immich_mobile/providers/background_sync.provider.dart';
 import 'package:immich_mobile/providers/backup/drift_backup.provider.dart';
 import 'package:immich_mobile/providers/gallery_permission.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/memory.provider.dart';
+import 'package:immich_mobile/providers/infrastructure/offline.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/platform.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/settings.provider.dart';
 import 'package:immich_mobile/providers/permission.provider.dart';
 import 'package:immich_mobile/providers/server_info.provider.dart';
+import 'package:immich_mobile/providers/session_state.provider.dart';
 import 'package:immich_mobile/providers/websocket.provider.dart';
 import 'package:logging/logging.dart';
 
@@ -129,6 +131,22 @@ class AppLifeCycleNotifier extends StateNotifier<AppLifeCycleEnum> {
         }, "syncRemote"),
       ]);
       _ref.invalidate(driftMemoryFutureProvider);
+
+      // immich-sync fork: a resume that reached the server clears the session
+      // hint; one that did not is the live "unreachable" signal (R2).
+      if (syncSuccess) {
+        _ref.read(sessionIssueProvider.notifier).clear();
+      } else {
+        unawaited(_ref.read(sessionIssueProvider.notifier).reportUnreachable());
+      }
+
+      // immich-sync fork: bring the offline copies in line with whatever the
+      // metadata sync just learned. check() is a few aggregates when nothing
+      // moved, the usual case on resume. Downloads only follow a sync that
+      // reached the server, since enqueueing against a dead network burns
+      // retries.
+      unawaited(_safeRun(() => _ref.read(offlineSyncServiceProvider).check(download: syncSuccess), "offlineCheck"));
+
       if (syncSuccess) {
         await Future.wait([
           _safeRun(backgroundManager.hashAssets, "hashAssets").then((_) {

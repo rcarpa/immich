@@ -190,6 +190,8 @@ ImageProvider getFullImageProvider(
       assetType: asset.type,
       isAnimated: asset.isAnimatedImage,
       edited: edited,
+      // immich-sync fork: decides the URL the original is stored and read under.
+      isEdited: asset.isEdited,
       thumbnailSize: remoteThumbnailSize,
     );
   }

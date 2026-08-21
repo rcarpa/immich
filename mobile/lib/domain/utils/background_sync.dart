@@ -27,6 +27,12 @@ class BackgroundSyncManager {
   final SyncCallback? onCloudIdSyncComplete;
   final SyncErrorCallback? onCloudIdSyncError;
 
+  /// immich-sync fork: the remote side of the database has changed. Every path that applies server state fires this —
+  /// the sync stream and each websocket batch — because the mirror decides what to fetch from that database and has no
+  /// other way to hear about it. Without it, a photo taken and uploaded while the app stays open is mirrored only after
+  /// a resume, and an album deleted on the server appears to do nothing.
+  final SyncCallback? onRemoteChanged;
+
   Cancelable<bool?>? _syncTask;
   bool _syncQueued = false;
   Cancelable<void>? _syncWebsocketTask;
@@ -48,6 +54,7 @@ class BackgroundSyncManager {
     this.onCloudIdSyncStart,
     this.onCloudIdSyncComplete,
     this.onCloudIdSyncError,
+    this.onRemoteChanged,
   });
 
   // The tasks the app-resume path re-runs. One in-flight when the app was suspended
@@ -173,6 +180,10 @@ class BackgroundSyncManager {
         .then((result) {
           final success = result ?? false;
           onRemoteSyncComplete?.call(success);
+          if (success) {
+            // immich-sync fork
+            onRemoteChanged?.call();
+          }
           _syncQueued &= success;
           return success;
         })
@@ -203,6 +214,8 @@ class BackgroundSyncManager {
     _syncWebsocketTask = _handleWsAssetUploadReadyV1Batch(batchData);
     return _syncWebsocketTask!.whenComplete(() {
       _syncWebsocketTask = null;
+      // immich-sync fork
+      onRemoteChanged?.call();
     });
   }
 
@@ -213,6 +226,8 @@ class BackgroundSyncManager {
     _syncWebsocketTask = _handleWsAssetUploadReadyV2Batch(batchData);
     return _syncWebsocketTask!.whenComplete(() {
       _syncWebsocketTask = null;
+      // immich-sync fork
+      onRemoteChanged?.call();
     });
   }
 
@@ -223,6 +238,8 @@ class BackgroundSyncManager {
     _syncWebsocketTask = _handleWsAssetEditReadyV1(data);
     return _syncWebsocketTask!.whenComplete(() {
       _syncWebsocketTask = null;
+      // immich-sync fork
+      onRemoteChanged?.call();
     });
   }
 
@@ -233,6 +250,8 @@ class BackgroundSyncManager {
     _syncWebsocketTask = _handleWsAssetEditReadyV2(data);
     return _syncWebsocketTask!.whenComplete(() {
       _syncWebsocketTask = null;
+      // immich-sync fork
+      onRemoteChanged?.call();
     });
   }
 

@@ -14,6 +14,7 @@ import 'package:immich_mobile/presentation/pages/edit/editor.provider.dart';
 import 'package:immich_mobile/providers/theme.provider.dart';
 import 'package:immich_mobile/theme/theme_data.dart';
 import 'package:immich_mobile/utils/editor.utils.dart';
+import 'package:immich_mobile/utils/error_handler.dart';
 import 'package:immich_mobile/widgets/common/immich_toast.dart';
 import 'package:immich_ui/immich_ui.dart';
 import 'package:openapi/api.dart' show MirrorAxis, MirrorParameters, RotateParameters;
@@ -66,12 +67,16 @@ class _DriftEditImagePageState extends ConsumerState<DriftEditImagePage> with Ti
 
       ImmichToast.show(context: context, msg: context.t.success, toastType: ToastType.success);
       Navigator.of(context).pop();
-    } catch (e) {
+    } catch (error, stack) {
       if (!mounted) {
         return;
       }
 
-      ImmichToast.show(context: context, msg: context.t.error_title, toastType: ToastType.error);
+      // immich-sync fork: through `handleError`, like every other action in the app, rather than a bare "Error" toast
+      // that swallows the cause. The server refuses several edits outright — a panorama, a GIF, an out-of-bounds crop —
+      // and each answers with a message saying which. Discarding it leaves an unexplainable red toast and nothing to
+      // investigate from.
+      handleError(error, stack: stack, description: 'Failed to save the edits for the asset');
     } finally {
       ref.read(editorStateProvider.notifier).setIsEditing(false);
     }

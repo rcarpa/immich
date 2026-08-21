@@ -66,3 +66,11 @@ libisar.so
 
 # Translation file
 lib/generated/
+
+# immich-sync fork: release output and the local config of each route. Those name
+# the host you serve from and the account you publish under, neither of which
+# belongs in a public fork.
+/dist_altstore/
+/dist_testflight/
+tools/altstore.env
+tools/testflight.env

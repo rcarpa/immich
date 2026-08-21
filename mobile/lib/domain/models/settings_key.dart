@@ -36,6 +36,20 @@ enum SettingsKey<T> {
   albumIsReverse<bool>(),
   albumIsGrid<bool>(),
 
+  // immich-sync fork: what to do with photos that arrive later, as JSON (see
+  // offline_policy.model.dart). A settings value rather than a table: it
+  // is a handful of album entries, rarely written, and needs no migration. The
+  // per-asset decisions it produces live in the fork's own database.
+  offlinePolicy<String?>(),
+  offlineWifiOnly<bool>(),
+  // How much browsing may keep on top of the mirror, and the most the app may
+  // use in total, both in bytes. Zero means no limit (see FORK.md §7).
+  offlineCacheBudget<int>(),
+  offlineStorageLimit<int>(),
+  // Downloading is paused until the user says otherwise. Persisted, because a
+  // stop that forgets itself on the next launch is not a stop.
+  offlinePaused<bool>(),
+
   // Backup
   backupEnabled<bool>(),
   backupUseCellularForVideos<bool>(),

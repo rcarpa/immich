@@ -25,6 +25,12 @@ import native_video_player
   }
 
   public static func registerPlugins(with registry: FlutterPluginRegistry, messenger: FlutterBinaryMessenger) {
+    // immich-sync fork: creates the blob store, keeps it out of iCloud backup,
+    // and indexes it off the launch path so the image API can answer "is this
+    // held?" without touching the filesystem.
+    OfflineStore.prepare()
+    OfflineStoreChannel.register(messenger: messenger)
+
     NativeSyncApiImpl.register(with: registry.registrar(forPlugin: NativeSyncApiImpl.name)!)
     PermissionApiSetup.setUp(binaryMessenger: messenger, api: PermissionApiImpl())
     LocalImageApiSetup.setUp(binaryMessenger: messenger, api: LocalImageApiImpl())

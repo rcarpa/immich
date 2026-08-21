@@ -36,17 +36,72 @@ class RemoteImageApiImpl: NSObject, RemoteImageApi {
   ]
 
   func requestImage(url: String, requestId: Int64, preferEncoded: Bool, width: Int64?, height: Int64?, completion: @escaping (Result<[String : Int64]?, any Error>) -> Void) {
-    var urlRequest = URLRequest(url: URL(string: url)!)
-    urlRequest.cachePolicy = .returnCacheDataElseLoad
-
     let request = RemoteImageRequest(id: requestId, completion: completion)
+    Self.registry.add(requestId: requestId, request: request)
+
+    // immich-sync fork: a stored blob is authoritative and served with no
+    // network, so browsing is identical whether the server is reachable,
+    // unreachable, or rejecting the token.
+    //
+    // This method runs on the platform main thread, so all it does here is name
+    // the blob and ask the in-memory index whether it is worth a syscall. The
+    // open happens on the store's own queue, away from the thread that is
+    // rendering and the queue that decoding saturates.
+    let name = OfflineStore.fileName(for: url)
+    if let name, OfflineStore.mightHold(name) {
+      OfflineStore.io.async {
+        if request.isCancelled {
+          return request.completion(ImageProcessing.cancelledResult)
+        }
+        guard let stored = OfflineStore.data(name: name) else {
+          return Self.fetch(url: url, name: name, request: request, encoded: preferEncoded, width: width, height: height)
+        }
+        ImageProcessing.queue.addOperation {
+          if request.isCancelled {
+            return request.completion(ImageProcessing.cancelledResult)
+          }
+          Self.handleCompletion(request: request, encoded: preferEncoded, width: width, height: height, data: stored, response: nil, error: nil)
+        }
+      }
+      return
+    }
+
+    Self.fetch(url: url, name: name, request: request, encoded: preferEncoded, width: width, height: height)
+  }
+
+  /// immich-sync fork: the network path, reached only when the store does not
+  /// already hold the URL.
+  ///
+  /// What comes back is kept, so looking at a photo is part of mirroring it.
+  /// Upstream leaves these bytes in a URLCache the reconciler cannot see, which
+  /// costs a second download to get the same photo offline.
+  private static func fetch(url: String, name: String?, request: RemoteImageRequest, encoded: Bool, width: Int64?, height: Int64?) {
+    guard let parsed = URL(string: url) else {
+      registry.remove(requestId: request.id)
+      return request.completion(.failure(PigeonError(code: "", message: "Invalid image URL", details: nil)))
+    }
+
+    var urlRequest = URLRequest(url: parsed)
+    // immich-sync fork: the store keeps image bytes now, so URLSession holding a
+    // second copy would only crowd out the API traffic still sharing its cache.
+    urlRequest.cachePolicy = name == nil ? .returnCacheDataElseLoad : .reloadIgnoringLocalCacheData
 
     let task = URLSessionManager.shared.session.dataTask(with: urlRequest) { data, response, error in
-      Self.handleCompletion(request: request, encoded: preferEncoded, width: width, height: height, data: data, response: response, error: error)
+      if let name, let data, error == nil, (response as? HTTPURLResponse)?.statusCode == 200 {
+        OfflineStore.store(data, name: name)
+      }
+      handleCompletion(request: request, encoded: encoded, width: width, height: height, data: data, response: response, error: error)
     }
 
     request.task = task
-    Self.registry.add(requestId: requestId, request: request)
+    // The request may have been cancelled while this was queued, when `cancel()`
+    // would have found a nil task. Always resume() even so: cancel-then-resume
+    // still delivers the URLSession completion, which is what answers
+    // `request.completion` exactly once. A task cancelled while suspended and
+    // never resumed leaks the request and hangs its Dart-side future.
+    if request.isCancelled {
+      task.cancel()
+    }
     task.resume()
   }
 
@@ -162,12 +217,17 @@ class RemoteImageApiImpl: NSObject, RemoteImageApi {
     Self.registry.remove(requestId: requestId)?.cancel()
   }
 
+  /// immich-sync fork: reports and clears the opportunistic region too, since
+  /// that is where image bytes accumulate now. `pinned/` is untouched — it is the
+  /// offline library, and has its own control.
   func clearCache(completion: @escaping (Result<Int64, any Error>) -> Void) {
     Task {
       let cache = URLSessionManager.shared.session.configuration.urlCache!
-      let cacheSize = Int64(cache.currentDiskUsage)
+      let cacheSize = Int64(cache.currentDiskUsage) + OfflineStore.cacheSize()
       cache.removeAllCachedResponses()
-      completion(.success(cacheSize))
+      // Answered from inside, since the removal is a barrier on another queue: a
+      // caller that re-read the size on completion otherwise saw the old total.
+      OfflineStore.clearCache { completion(.success(cacheSize)) }
     }
   }
 }

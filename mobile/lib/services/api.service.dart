@@ -49,7 +49,18 @@ class ApiService {
   final _log = Logger("ApiService");
 
   Future<void> updateHeaders() async {
-    await NetworkRepository.setHeaders(getRequestHeaders(), getServerUrls());
+    // immich-sync fork: re-seed the auth cookie from the stored token, not only
+    // during the one-time migration that normally writes it.
+    //
+    // Auth is cookie-only and the cookie jar lives in the App Group container, so
+    // a sideloaded build whose App Group differs from the previous install's
+    // loses it every launch and looks signed out while holding a valid token.
+    // This makes auth depend on the database instead. Idempotent.
+    await NetworkRepository.setHeaders(
+      getRequestHeaders(),
+      getServerUrls(),
+      token: Store.tryGet(StoreKey.accessToken),
+    );
     _apiClient.client = NetworkRepository.client;
   }
 

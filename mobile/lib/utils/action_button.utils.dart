@@ -13,6 +13,7 @@ import 'package:immich_mobile/presentation/actions/asset_debug.action.dart';
 import 'package:immich_mobile/presentation/actions/cast.action.dart';
 import 'package:immich_mobile/presentation/actions/delete.action.dart';
 import 'package:immich_mobile/presentation/actions/download.action.dart';
+import 'package:immich_mobile/presentation/actions/keep_offline.action.dart';
 import 'package:immich_mobile/presentation/actions/lock.action.dart';
 import 'package:immich_mobile/presentation/actions/open_in_browser.action.dart';
 import 'package:immich_mobile/presentation/actions/remove_from_album.action.dart';
@@ -71,6 +72,8 @@ enum ActionButtonType {
   viewInTimeline,
   slideshow,
   download,
+  // immich-sync fork: beside download, not instead of it (FORK.md §3.1.1).
+  keepOffline,
   upload,
   openInBrowser,
   unstack,
@@ -105,6 +108,9 @@ enum ActionButtonType {
         !context.isInLockedView && //
             context.asset.hasRemote && //
             !context.asset.hasLocal,
+      // immich-sync fork: unlike download, offered even when a camera-roll copy
+      // exists — the mirror is a different store with different durability.
+      ActionButtonType.keepOffline => !context.isInLockedView && context.asset.hasRemote,
       ActionButtonType.restoreTrash =>
         context.isOwner && //
             !context.isInLockedView && //
@@ -179,6 +185,8 @@ enum ActionButtonType {
       ActionButtonType.archive ||
       ActionButtonType.unarchive => ActionMenuItem(action: ArchiveAction(source: context.source)),
       ActionButtonType.download => ActionMenuItem(action: DownloadAction(source: context.source)),
+      // immich-sync fork
+      ActionButtonType.keepOffline => ActionMenuItem(action: KeepOfflineAction(source: context.source)),
       ActionButtonType.restoreTrash => ActionMenuItem(action: RestoreAction(source: context.source)),
       ActionButtonType.delete => ActionMenuItem(action: DeleteAction(source: context.source)),
       ActionButtonType.moveToLockFolder ||

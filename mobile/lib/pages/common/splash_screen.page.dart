@@ -5,6 +5,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:immich_mobile/constants/constants.dart';
 import 'package:immich_mobile/constants/locales.dart';
 import 'package:immich_mobile/domain/models/config/app_config.dart';
 import 'package:immich_mobile/domain/models/store.model.dart';
@@ -16,12 +17,15 @@ import 'package:immich_mobile/infrastructure/repositories/settings.repository.da
 import 'package:immich_mobile/providers/auth.provider.dart';
 import 'package:immich_mobile/providers/background_sync.provider.dart';
 import 'package:immich_mobile/providers/backup/drift_backup.provider.dart';
+import 'package:immich_mobile/providers/infrastructure/offline.provider.dart';
 import 'package:immich_mobile/providers/server_info.provider.dart';
+import 'package:immich_mobile/providers/session_state.provider.dart';
 import 'package:immich_mobile/providers/view_intent/view_intent_handler.provider.dart';
 import 'package:immich_mobile/providers/websocket.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
 import 'package:immich_mobile/theme/color_scheme.dart';
 import 'package:immich_mobile/theme/theme_data.dart';
+import 'package:immich_mobile/utils/brand_translation_loader.dart';
 import 'package:immich_mobile/widgets/common/immich_logo.dart';
 import 'package:immich_mobile/widgets/common/immich_title_text.dart';
 import 'package:logging/logging.dart';
@@ -42,10 +46,11 @@ class BootstrapErrorWidget extends StatelessWidget {
       path: translationsPath,
       useFallbackTranslations: true,
       fallbackLocale: locales.values.first,
-      assetLoader: const CodegenLoader(),
+      // immich-sync fork: renames the product in every translated string.
+      assetLoader: const BrandTranslationLoader(CodegenLoader()),
       child: Builder(
         builder: (lCtx) => MaterialApp(
-          title: 'Immich',
+          title: kAppName,
           debugShowCheckedModeBanner: true,
           localizationsDelegates: lCtx.localizationDelegates,
           supportedLocales: lCtx.supportedLocales,
@@ -331,6 +336,20 @@ class SplashScreenPageState extends ConsumerState<SplashScreenPage> {
 
                   await viewIntentHandler.flushDeferredViewIntent();
 
+                  // immich-sync fork: the live "offline at cold start" signal.
+                  // saveAuthInfo swallows network errors and resolves normally, so
+                  // onError below rarely fires; a failed remote sync is what does.
+                  if (syncSuccess) {
+                    ref.read(sessionIssueProvider.notifier).clear();
+                  } else {
+                    unawaited(ref.read(sessionIssueProvider.notifier).reportUnreachable());
+                  }
+
+                  // immich-sync fork: metadata is in, so bring the offline copies
+                  // in line with it. On a normal day the full pass runs here and
+                  // nowhere else: once per launch, off the critical path.
+                  unawaited(ref.read(offlineSyncServiceProvider).reconcile(enqueue: syncSuccess));
+
                   if (syncSuccess) {
                     await Future.wait([
                       backgroundManager.hashAssets().then((_) {
@@ -352,13 +371,15 @@ class SplashScreenPageState extends ConsumerState<SplashScreenPage> {
                 }
               },
               onError: (exception) {
-                log.severe('Failed to update auth info with access token: $accessToken');
+                // immich-sync fork (R2): a failure here is almost always "no
+                // network at launch", and logging out would wipe the synced
+                // library. Report it and carry on into what is stored.
+                log.severe('Failed to update auth info with access token');
                 if (!mounted) {
                   return;
                 }
 
-                unawaited(ref.read(authProvider.notifier).logout());
-                unawaited(context.router.replaceAll([const LoginRoute()]));
+                unawaited(ref.read(sessionIssueProvider.notifier).reportRejected());
               },
             ),
       );
@@ -391,7 +412,8 @@ class SplashScreenPageState extends ConsumerState<SplashScreenPage> {
   Widget build(BuildContext context) {
     return const Scaffold(
       body: Center(
-        child: Image(image: AssetImage('assets/immich-logo.png'), width: 80, filterQuality: FilterQuality.high),
+        // immich-sync fork: the fork's own mark.
+        child: Image(image: AssetImage('assets/mirrich-logo.png'), width: 80, filterQuality: FilterQuality.high),
       ),
     );
   }

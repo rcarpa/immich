@@ -6,6 +6,7 @@ import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/extensions/duration_extensions.dart';
 import 'package:immich_mobile/extensions/theme_extensions.dart';
 import 'package:immich_mobile/presentation/widgets/images/thumbnail.widget.dart';
+import 'package:immich_mobile/presentation/widgets/offline/offline_badge.widget.dart';
 import 'package:immich_mobile/presentation/widgets/timeline/constants.dart';
 import 'package:immich_mobile/providers/asset_viewer/asset_viewer.provider.dart';
 import 'package:immich_mobile/providers/backup/asset_upload_progress.provider.dart';
@@ -157,33 +158,21 @@ class _ThumbnailTileState extends ConsumerState<ThumbnailTile> {
                       ),
                     ),
                   ),
+                // immich-sync fork: upstream's own cloud, kept verbatim, with
+                // the mirror's meter under it — "where are the bytes" and "what
+                // survives losing the network" are two questions, and one glyph
+                // cannot answer both (FORK.md §3.6).
                 if (storageIndicator && asset != null)
                   AnimatedOpacity(
                     opacity: _hideIndicators ? 0.0 : 1.0,
                     duration: Durations.short4,
-                    child: switch (asset.storage) {
-                      AssetState.local => const Align(
-                        alignment: Alignment.bottomRight,
-                        child: Padding(
-                          padding: EdgeInsets.only(right: 10.0, bottom: 6.0),
-                          child: _TileOverlayIcon(Icons.cloud_off_outlined),
-                        ),
+                    child: Align(
+                      alignment: Alignment.bottomRight,
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 8.0, bottom: 6.0),
+                        child: OfflineAvailabilityIndicator(asset: asset),
                       ),
-                      AssetState.remote => const Align(
-                        alignment: Alignment.bottomRight,
-                        child: Padding(
-                          padding: EdgeInsets.only(right: 10.0, bottom: 6.0),
-                          child: _TileOverlayIcon(Icons.cloud_outlined),
-                        ),
-                      ),
-                      AssetState.merged => const Align(
-                        alignment: Alignment.bottomRight,
-                        child: Padding(
-                          padding: EdgeInsets.only(right: 10.0, bottom: 6.0),
-                          child: _TileOverlayIcon(Icons.cloud_done_outlined),
-                        ),
-                      ),
-                    },
+                    ),
                   ),
 
                 if (asset != null && asset.isFavorite)

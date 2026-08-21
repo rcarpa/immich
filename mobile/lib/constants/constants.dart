@@ -1,5 +1,11 @@
 import 'dart:io';
 
+// immich-sync fork: the product's name, and the one it is a fork of. Used to
+// rename the product in upstream's translated strings as they are loaded (see
+// utils/brand_translation_loader.dart), so the catalogue itself is never edited.
+const String kAppName = "Mirrich";
+const String kUpstreamName = "Immich";
+
 const String kMobileMetadataKey = "mobile-app";
 
 // Number of log entries to retain on app start

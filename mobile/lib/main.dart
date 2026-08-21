@@ -19,6 +19,7 @@ import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/generated/codegen_loader.g.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/infrastructure/repositories/network.repository.dart';
+import 'package:immich_mobile/infrastructure/repositories/offline_flags.repository.dart';
 import 'package:immich_mobile/pages/common/splash_screen.page.dart';
 import 'package:immich_mobile/platform/background_worker_lock_api.g.dart';
 import 'package:immich_mobile/providers/app_life_cycle.provider.dart';
@@ -36,6 +37,7 @@ import 'package:immich_mobile/services/deep_link.service.dart';
 import 'package:immich_mobile/theme/dynamic_theme.dart';
 import 'package:immich_mobile/theme/theme_data.dart';
 import 'package:immich_mobile/utils/bootstrap.dart';
+import 'package:immich_mobile/utils/brand_translation_loader.dart';
 import 'package:immich_mobile/utils/cache/widgets_binding.dart';
 import 'package:immich_mobile/utils/debug_print.dart';
 import 'package:immich_mobile/utils/licenses.dart';
@@ -52,6 +54,8 @@ void main() async {
     unawaited(BackgroundWorkerLockService(BackgroundWorkerLockApi()).lock());
     await EasyLocalization.ensureInitialized();
     final (drift, _) = await Bootstrap.initDomain();
+    // immich-sync fork: the fork's own database, opened before anything reads it.
+    await OfflineFlagsRepository.open();
     await initApp();
     // Warm-up isolate pool for worker manager
     await workerManagerPatch.init(dynamicSpawning: true, isolatesCount: max(Platform.numberOfProcessors - 1, 5));
@@ -105,7 +109,20 @@ Future<void> initApp() async {
 
   await FileDownloader().trackTasksInGroup(kDownloadGroupLivePhoto, markDownloadedComplete: false);
 
-  unawaited(FileDownloader().trackTasks());
+  // immich-sync fork: tracked per group rather than globally. The offline mirror
+  // enqueues one task per file — six figures of them — and never reads their
+  // records back, so `trackTasks()` means a database write and delete per blob.
+  for (final group in [
+    '',
+    kBackupGroup,
+    kManualUploadGroup,
+    kBackupLivePhotoGroup,
+    kDownloadGroupImage,
+    kDownloadGroupVideo,
+    kShareDownloadGroup,
+  ]) {
+    unawaited(FileDownloader().trackTasksInGroup(group));
+  }
 
   LicenseRegistry.addLicense(() async* {
     for (final license in nonPubLicenses.entries) {
@@ -262,7 +279,8 @@ class ImmichAppState extends ConsumerState<ImmichApp> with WidgetsBindingObserve
     return ProviderScope(
       overrides: [localeProvider.overrideWithValue(context.locale)],
       child: MaterialApp.router(
-        title: 'Immich',
+        // immich-sync fork
+        title: kAppName,
         debugShowCheckedModeBanner: true,
         scaffoldMessengerKey: scaffoldMessengerKey,
         localizationsDelegates: context.localizationDelegates,
@@ -298,7 +316,8 @@ class MainWidget extends StatelessWidget {
       path: translationsPath,
       useFallbackTranslations: true,
       fallbackLocale: locales.values.first,
-      assetLoader: const CodegenLoader(),
+      // immich-sync fork: renames the product in every translated string.
+      assetLoader: const BrandTranslationLoader(CodegenLoader()),
       child: const ImmichApp(),
     );
   }

@@ -110,6 +110,16 @@ class _MobileLayout extends StatelessWidget {
                 ],
         )
         .toList();
+    // immich-sync fork: an added section, not a replacement — the camera-roll
+    // storage screens above manage a different store (FORK.md §3.1.1).
+    settings.add(
+      const SettingsCard(
+        icon: Icons.cloud_download_outlined,
+        title: 'Offline copies',
+        subtitle: "Choose what's available offline",
+        settingRoute: OfflineSyncRoute(),
+      ),
+    );
     settings.add(
       SettingsCard(
         icon: Icons.auto_awesome_outlined,
@@ -145,6 +155,14 @@ class _TabletLayout extends HookWidget {
                     selectedTileColor: context.themeData.highlightColor,
                     onTap: () => selectedSection.value = s,
                   ),
+                ),
+              ),
+              // immich-sync fork
+              SliverToBoxAdapter(
+                child: ListTile(
+                  title: const Text('Offline copies'),
+                  leading: const Icon(Icons.cloud_download_outlined),
+                  onTap: () => context.pushRoute(const OfflineSyncRoute()),
                 ),
               ),
               SliverToBoxAdapter(

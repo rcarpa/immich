@@ -10,7 +10,8 @@ class ImmichTitleText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Image(
-      image: AssetImage(context.isDarkTheme ? 'assets/immich-text-dark.png' : 'assets/immich-text-light.png'),
+      // immich-sync fork: the fork's own wordmark (§4.1).
+      image: AssetImage(context.isDarkTheme ? 'assets/mirrich-text-dark.png' : 'assets/mirrich-text-light.png'),
       width: fontSize * 4,
       filterQuality: FilterQuality.high,
       color: context.primaryColor,

@@ -12,6 +12,7 @@ import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/extensions/theme_extensions.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/presentation/pages/drift_user_selection.page.dart';
+import 'package:immich_mobile/presentation/widgets/offline/offline_album_tile.widget.dart';
 import 'package:immich_mobile/providers/auth.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/album.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/current_album.provider.dart';
@@ -234,6 +235,10 @@ class DriftAlbumOptionsPage extends HookConsumerWidget {
                   style: context.textTheme.labelLarge?.copyWith(color: context.colorScheme.onSurfaceSecondary),
                 ),
               ),
+            // immich-sync fork: the album is where this decision belongs — the
+            // same setting reached through Settings is three screens from its
+            // subject.
+            OfflineAlbumTile(album: album),
             buildSectionTitle(context.t.shared_album_section_people_title),
             if (isOwner) ...[
               ListTile(

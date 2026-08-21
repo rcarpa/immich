@@ -10,16 +10,18 @@ import 'package:immich_mobile/models/server_info/server_disk_info.model.dart';
 import 'package:immich_mobile/pages/common/settings.page.dart';
 import 'package:immich_mobile/providers/auth.provider.dart';
 import 'package:immich_mobile/providers/backup/backup.provider.dart';
+import 'package:immich_mobile/providers/infrastructure/offline.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/readonly_mode.provider.dart';
 import 'package:immich_mobile/providers/locale_provider.dart';
 import 'package:immich_mobile/providers/user.provider.dart';
 import 'package:immich_mobile/providers/websocket.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
 import 'package:immich_mobile/utils/bytes_units.dart';
+import 'package:immich_mobile/utils/error_handler.dart';
 import 'package:immich_mobile/widgets/common/app_bar_dialog/app_bar_profile_info.dart';
 import 'package:immich_mobile/widgets/common/app_bar_dialog/app_bar_server_info.dart';
-import 'package:immich_mobile/widgets/common/confirm_dialog.dart';
 import 'package:immich_mobile/widgets/common/immich_logo.dart';
+import 'package:immich_mobile/widgets/common/sign_out_dialog.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -58,7 +60,8 @@ class ImmichAppBarDialog extends HookConsumerWidget {
               child: Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Image.asset(
-                  context.isDarkTheme ? 'assets/immich-text-dark.png' : 'assets/immich-text-light.png',
+                  // immich-sync fork: the fork's own wordmark.
+                  context.isDarkTheme ? 'assets/mirrich-text-dark.png' : 'assets/mirrich-text-light.png',
                   height: 16,
                 ),
               ),
@@ -100,6 +103,16 @@ class ImmichAppBarDialog extends HookConsumerWidget {
       );
     }
 
+    // immich-sync fork: a second storage screen, not a replacement for the one
+    // above — they manage different stores (FORK.md §3.1.1).
+    ListTile buildOfflineCopiesButton() {
+      return buildActionButton(
+        Icons.cloud_download_outlined,
+        'Offline copies',
+        () => context.pushRoute(const OfflineSyncRoute()),
+      );
+    }
+
     ListTile buildAppLogButton() {
       return buildActionButton(
         Icons.assignment_outlined,
@@ -117,32 +130,46 @@ class ImmichAppBarDialog extends HookConsumerWidget {
             return;
           }
 
-          unawaited(
-            showDialog(
-              context: context,
-              builder: (BuildContext ctx) {
-                return ConfirmDialog(
-                  title: context.t.app_bar_signout_dialog_title,
-                  content: context.t.app_bar_signout_dialog_content,
-                  ok: context.t.yes,
-                  onOk: () async {
-                    isLoggingOut.value = true;
-                    await ref.read(authProvider.notifier).logout().whenComplete(() => isLoggingOut.value = false);
-                    if (!context.mounted) {
-                      return;
-                    }
+          // immich-sync fork: signing out is the only path that takes photos
+          // away, so it says so — and it is where the downloads have to be dealt
+          // with, since the screen managing them is behind the auth guard.
+          final choice = await showSignOutDialog(context);
+          if (choice == null) {
+            return;
+          }
 
-                    ref.read(websocketProvider.notifier).disconnect();
-                    if (!context.mounted) {
-                      return;
-                    }
+          // Read before awaiting: the login route below replaces this widget,
+          // and a read afterwards would throw on a disposed ref.
+          final auth = ref.read(authProvider.notifier);
+          final websocket = ref.read(websocketProvider.notifier);
+          final offlineSync = ref.read(offlineSyncServiceProvider);
 
-                    unawaited(context.replaceRoute(const LoginRoute()));
-                  },
-                );
-              },
-            ),
-          );
+          isLoggingOut.value = true;
+          try {
+            if (choice == SignOutChoice.eraseDownloads) {
+              await offlineSync.deleteAll();
+            } else {
+              // Stop downloading either way: the token is about to be revoked,
+              // and every queued task would fail against it.
+              await offlineSync.setPaused(true);
+            }
+            await auth.logout();
+          } catch (error, stack) {
+            // immich-sync fork: this deletes files and then revokes a session, so a
+            // failure between the two leaves downloads gone and the user signed in.
+            // Uncaught, the spinner just stopped and the screen never changed.
+            handleError(error, stack: stack, description: 'Could not finish signing out');
+            return;
+          } finally {
+            isLoggingOut.value = false;
+          }
+
+          websocket.disconnect();
+          if (!context.mounted) {
+            return;
+          }
+
+          unawaited(context.replaceRoute(const LoginRoute()));
         },
         trailing: isLoggingOut.value
             ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
@@ -289,6 +316,7 @@ class ImmichAppBarDialog extends HookConsumerWidget {
                 if (isReadonlyModeEnabled) buildReadonlyMessage(),
                 buildAppLogButton(),
                 buildFreeUpSpaceButton(),
+                buildOfflineCopiesButton(),
                 buildSettingButton(),
                 buildSignOutButton(),
                 buildFooter(),

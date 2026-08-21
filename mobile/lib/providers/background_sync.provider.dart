@@ -1,6 +1,7 @@
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/domain/utils/background_sync.dart';
 import 'package:immich_mobile/providers/backup/drift_backup.provider.dart';
+import 'package:immich_mobile/providers/infrastructure/offline.provider.dart';
 import 'package:immich_mobile/providers/sync_status.provider.dart';
 
 final backgroundSyncProvider = Provider<BackgroundSyncManager>((ref) {
@@ -30,6 +31,9 @@ final backgroundSyncProvider = Provider<BackgroundSyncManager>((ref) {
     onHashingStart: syncStatusNotifier.startHashJob,
     onHashingComplete: syncStatusNotifier.completeHashJob,
     onHashingError: syncStatusNotifier.errorHashJob,
+    // immich-sync fork: the mirror decides what to fetch from the database upstream just changed, so it has to hear
+    // about it — on every path, not only on resume.
+    onRemoteChanged: () => ref.read(offlineSyncServiceProvider).checkSoon(),
     onCloudIdSyncStart: syncStatusNotifier.startCloudIdSync,
     onCloudIdSyncComplete: syncStatusNotifier.completeCloudIdSync,
     onCloudIdSyncError: syncStatusNotifier.errorCloudIdSync,
