@@ -5,6 +5,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:immich_mobile/constants/constants.dart';
 import 'package:immich_mobile/constants/locales.dart';
 import 'package:immich_mobile/data/db/main/database.dart';
 import 'package:immich_mobile/domain/models/config/app_config.dart';
@@ -24,6 +25,7 @@ import 'package:immich_mobile/providers/websocket.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
 import 'package:immich_mobile/theme/color_scheme.dart';
 import 'package:immich_mobile/theme/theme_data.dart';
+import 'package:immich_mobile/utils/brand_translation_loader.dart';
 import 'package:immich_mobile/widgets/common/immich_logo.dart';
 import 'package:immich_mobile/widgets/common/immich_title_text.dart';
 import 'package:logging/logging.dart';
@@ -44,10 +46,11 @@ class BootstrapErrorWidget extends StatelessWidget {
       path: translationsPath,
       useFallbackTranslations: true,
       fallbackLocale: locales.values.first,
-      assetLoader: const CodegenLoader(),
+      // immich-sync fork: renames the product in every translated string.
+      assetLoader: const BrandTranslationLoader(CodegenLoader()),
       child: Builder(
         builder: (lCtx) => MaterialApp(
-          title: 'Immich',
+          title: kAppName,
           debugShowCheckedModeBanner: true,
           localizationsDelegates: lCtx.localizationDelegates,
           supportedLocales: lCtx.supportedLocales,
@@ -400,7 +403,8 @@ class SplashScreenPageState extends ConsumerState<SplashScreenPage> {
   Widget build(BuildContext context) {
     return const Scaffold(
       body: Center(
-        child: Image(image: AssetImage('assets/immich-logo.png'), width: 80, filterQuality: FilterQuality.high),
+        // immich-sync fork: the fork's own mark.
+        child: Image(image: AssetImage('assets/mirrich-logo.png'), width: 80, filterQuality: FilterQuality.high),
       ),
     );
   }

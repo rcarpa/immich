@@ -13,9 +13,34 @@ if (keystorePropertiesFile.exists()) {
   keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
 }
 
+// immich-sync fork: who this build claims to be (`android/Identity.properties`).
+//
+// Committed defaults first, then an optional local override — the same shape as
+// `ios/Signing.xcconfig` and its `#include? "Signing.local.xcconfig"`, so one habit
+// covers both platforms.
+def identity = new Properties()
+[rootProject.file('Identity.properties'), rootProject.file('Identity.local.properties')].each { file ->
+  if (file.exists()) {
+    file.withInputStream { identity.load(it) }
+  }
+}
+
 android {
   compileSdk = flutter.compileSdkVersion
   ndkVersion = flutter.ndkVersion
+
+  // immich-sync fork: compress the native libraries, opt-in per build.
+  //
+  // AGP stores them uncompressed by default so they can be mapped straight out of the APK — smaller
+  // on disk once installed, and a touch faster to start. The cost is the download, and for this app
+  // that cost is most of it: eighty of the ninety-odd megabytes are `.so` files that compress by
+  // roughly half. Where the APK is served from somewhere with a size limit, that trade is the wrong
+  // way round, so `-PmirrichCompactLibs=true` turns it over.
+  packaging {
+    jniLibs {
+      useLegacyPackaging = (project.findProperty('mirrichCompactLibs') ?: 'false').toBoolean()
+    }
+  }
 
   compileOptions {
     sourceCompatibility JavaVersion.VERSION_17
@@ -37,12 +62,15 @@ android {
   }
 
   defaultConfig {
-    applicationId "app.alextran.immich"
+    // immich-sync fork: see `android/Identity.properties`. Upstream's value is the default, so a
+    // checkout with no local override behaves exactly as upstream does.
+    applicationId identity.getProperty('applicationId', 'app.alextran.immich')
     minSdk = 26
     targetSdk = flutter.targetSdkVersion
     versionCode flutter.versionCode
     versionName flutter.versionName
-    resValue "string", "app_name", "Immich"
+    // immich-sync fork: the launcher label. Upstream's manifest reads it from here.
+    resValue "string", "app_name", "Mirrich"
   }
 
   signingConfigs {
