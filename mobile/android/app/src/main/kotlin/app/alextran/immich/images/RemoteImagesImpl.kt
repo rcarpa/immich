@@ -208,7 +208,52 @@ private object ImageFetcherManager {
     onSuccess: (NativeByteBuffer, String?) -> Unit,
     onFailure: (Exception) -> Unit,
   ) {
-    fetcher.fetch(url, signal, onSuccess, onFailure)
+    // immich-sync fork: a stored blob is authoritative and served with no network, so browsing is
+    // identical whether the server is reachable, unreachable, or rejecting the token.
+    //
+    // This runs on the thread the image API called from, so all it does here is name the blob and
+    // ask the in-memory index whether it is worth a syscall. The open happens on the store's own
+    // pool, away from the thread that is rendering.
+    val name = OfflineStore.fileName(url)
+    if (name != null && OfflineStore.mightHold(name)) {
+      OfflineStore.read {
+        val stored = OfflineStore.load(name)
+        if (stored != null) {
+          // Null content type, as the iOS side passes for a stored blob: nothing recorded what the
+          // server called it. The only reader is the RAW check, which then reads the container's
+          // own orientation rather than the sidecar's.
+          onSuccess(stored, null)
+        } else {
+          fetcher.fetch(url, signal, keeping(name, onSuccess), onFailure)
+        }
+      }
+      return
+    }
+
+    fetcher.fetch(url, signal, if (name == null) onSuccess else keeping(name, onSuccess), onFailure)
+  }
+
+  /**
+   * immich-sync fork: what comes back off the network is kept, so looking at a photo is part of
+   * mirroring it.
+   *
+   * As a spare — deciding that a photo belongs in the library is the Dart side's job, and a
+   * selection that wants the same file counts it as its own rather than downloading it again.
+   */
+  private fun keeping(
+    name: String,
+    onSuccess: (NativeByteBuffer, String?) -> Unit,
+  ): (NativeByteBuffer, String?) -> Unit = { buffer, contentType ->
+    if (buffer.offset > 0) {
+      try {
+        val bytes = ByteArray(buffer.offset)
+        NativeBuffer.wrap(buffer.pointer, buffer.offset).get(bytes)
+        OfflineStore.store(bytes, name)
+      } catch (_: Throwable) {
+        // A blob that could not be kept is one more download later, never a wrong image.
+      }
+    }
+    onSuccess(buffer, contentType)
   }
 
   fun clearCache(onCleared: (Result<Long>) -> Unit) {

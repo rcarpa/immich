@@ -133,6 +133,11 @@ dependencies {
   ksp libs.glide.ksp
   coreLibraryDesugaring libs.desugar.jdk.libs
 
+  // immich-sync fork: the blob name is derived in Dart, Swift and Kotlin, and all three must agree
+  // byte for byte or the mirror silently serves nothing. `OfflineStoreNamingTest` pins the Kotlin
+  // half to the same literals as `test/utils/offline_paths_test.dart`.
+  testImplementation 'junit:junit:4.13.2'
+
   //Glance Widget
   implementation libs.glance.appwidget
   implementation libs.gson

@@ -108,7 +108,8 @@ class BackgroundWorkerBgService extends BackgroundWorkerFlutterApi {
             ],
           ),
           FileDownloader().trackTasksInGroup(kDownloadGroupLivePhoto, markDownloadedComplete: false),
-          FileDownloader().trackTasks(),
+          // immich-sync fork: per group, as in `main.dart`, so the offline mirror's tasks are not tracked.
+          for (final group in kTrackedTaskGroups) FileDownloader().trackTasksInGroup(group),
         ].nonNulls,
       );
 

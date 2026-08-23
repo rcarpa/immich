@@ -9,6 +9,7 @@ import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/extensions/platform_extensions.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
+import 'package:immich_mobile/presentation/widgets/offline/offline_cleanup_note.widget.dart';
 import 'package:immich_mobile/providers/cleanup.provider.dart';
 import 'package:immich_mobile/providers/haptic_feedback.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/album.provider.dart';
@@ -518,19 +519,27 @@ class _FreeUpSpaceSettingsState extends ConsumerState<FreeUpSpaceSettings> {
                     ),
                   ),
                   subtitle: _hasScanned
-                      ? Text(
-                          state.totalBytes > 0
-                              ? context.t.cleanup_found_assets_with_size(
-                                  count: state.assetsToDelete.length,
-                                  size: formatBytes(state.totalBytes),
-                                )
-                              : context.t.cleanup_found_assets(count: state.assetsToDelete.length),
-                          style: context.textTheme.bodyMedium?.copyWith(
-                            color: state.assetsToDelete.isNotEmpty
-                                ? context.colorScheme.primary
-                                : context.colorScheme.onSurface.withValues(alpha: 0.6),
-                            fontWeight: FontWeight.w500,
-                          ),
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              state.totalBytes > 0
+                                  ? context.t.cleanup_found_assets_with_size(
+                                      count: state.assetsToDelete.length,
+                                      size: formatBytes(state.totalBytes),
+                                    )
+                                  : context.t.cleanup_found_assets(count: state.assetsToDelete.length),
+                              style: context.textTheme.bodyMedium?.copyWith(
+                                color: state.assetsToDelete.isNotEmpty
+                                    ? context.colorScheme.primary
+                                    : context.colorScheme.onSurface.withValues(alpha: 0.6),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            // immich-sync fork: deleting a local original is only
+                            // invisible for items the mirror keeps.
+                            OfflineCleanupNote(candidates: state.assetsToDelete),
+                          ],
                         )
                       : null,
                   content: Column(

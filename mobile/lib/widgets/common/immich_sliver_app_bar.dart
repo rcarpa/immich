@@ -9,6 +9,8 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/models/server_info/server_info.model.dart';
+// immich-sync fork
+import 'package:immich_mobile/presentation/widgets/offline/offline_indicator.widget.dart';
 import 'package:immich_mobile/providers/backup/backup.provider.dart';
 import 'package:immich_mobile/providers/cast.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/readonly_mode.provider.dart';
@@ -25,6 +27,11 @@ import 'package:immich_mobile/widgets/common/user_circle_avatar.dart';
 class ImmichSliverAppBar extends ConsumerWidget {
   final List<Widget>? actions;
   final bool showUploadButton;
+
+  /// immich-sync fork: gated on its own, not on [showUploadButton]. The screens
+  /// that hide the upload button — the library tab, an album — are ones where
+  /// "how much of this is on my phone" is still worth asking.
+  final bool showOfflineButton;
   final bool floating;
   final bool pinned;
   final bool snap;
@@ -35,6 +42,7 @@ class ImmichSliverAppBar extends ConsumerWidget {
     super.key,
     this.actions,
     this.showUploadButton = true,
+    this.showOfflineButton = true,
     this.floating = true,
     this.pinned = false,
     this.snap = true,
@@ -74,6 +82,10 @@ class ImmichSliverAppBar extends ConsumerWidget {
                 icon: Icon(isCasting ? Icons.cast_connected_rounded : Icons.cast_rounded),
               ),
             ...?actions,
+            // immich-sync fork: the other direction. Upstream's button asks
+            // whether the camera roll reached the server; this one asks how much
+            // of the library would survive losing the network.
+            if (showOfflineButton) const OfflineIndicator(),
             if (showUploadButton && !isReadonlyModeEnabled) const _BackupIndicator(),
             const _ProfileIndicator(),
             const SizedBox(width: 8),

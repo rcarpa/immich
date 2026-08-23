@@ -1,12 +1,15 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
+import 'package:immich_mobile/domain/models/offline/offline_policy.model.dart';
+import 'package:immich_mobile/domain/utils/offline_index.dart';
 import 'package:immich_mobile/infrastructure/loaders/image_request.dart';
 import 'package:immich_mobile/infrastructure/repositories/settings.repository.dart';
 import 'package:immich_mobile/presentation/widgets/images/animated_image_stream_completer.dart';
 import 'package:immich_mobile/presentation/widgets/images/image_provider.dart';
 import 'package:immich_mobile/presentation/widgets/images/one_frame_multi_image_stream_completer.dart';
 import 'package:immich_mobile/utils/image_url_builder.dart';
+import 'package:immich_mobile/utils/offline_paths.dart';
 import 'package:openapi/api.dart';
 
 class RemoteImageProvider extends ImageProvider<RemoteImageProvider> {
@@ -70,6 +73,11 @@ class RemoteFullImageProvider extends ImageProvider<RemoteFullImageProvider> {
   final bool isAnimated;
   final bool edited;
 
+  /// immich-sync fork: whether an edited version exists, which decides the URL the
+  /// original is stored and read under. Distinct from [edited], which asks for that
+  /// version rather than asserting it exists.
+  final bool isEdited;
+
   /// Physical size of the thumbnail shown before the preview.
   final Size? thumbnailSize;
 
@@ -79,8 +87,13 @@ class RemoteFullImageProvider extends ImageProvider<RemoteFullImageProvider> {
     required this.assetType,
     required this.isAnimated,
     this.edited = true,
+    this.isEdited = false,
     this.thumbnailSize,
   });
+
+  /// immich-sync fork: one definition for both branches below, so the viewer and
+  /// the mirror cannot ask for the same bytes under two names.
+  String get _originalUrl => offlineOriginalUrl(assetId, isEdited: isEdited, thumbHash: thumbhash, edited: edited);
 
   @override
   Future<RemoteFullImageProvider> obtainKey(ImageConfiguration configuration) {
@@ -140,7 +153,13 @@ class RemoteFullImageProvider extends ImageProvider<RemoteFullImageProvider> {
         edited: key.edited,
       ),
     );
-    final loadOriginal = assetType == AssetType.image && SettingsRepository.instance.appConfig.image.loadOriginal;
+    // immich-sync fork: a stored original costs no network, so an item kept at
+    // full quality shows the real photo even with the setting off. Otherwise
+    // "full quality" would download originals nothing ever reads.
+    final loadOriginal =
+        assetType == AssetType.image &&
+        (SettingsRepository.instance.appConfig.image.loadOriginal ||
+            OfflineIndex.availability(key.assetId) == OfflineAvailability.full);
     yield* loader.loadRequest(previewRequest, decode, isFinal: !loadOriginal);
 
     if (!loadOriginal) {
@@ -151,9 +170,7 @@ class RemoteFullImageProvider extends ImageProvider<RemoteFullImageProvider> {
       return;
     }
 
-    final originalRequest = loader.request = RemoteImageRequest(
-      uri: getOriginalUrlForRemoteId(key.assetId, edited: key.edited),
-    );
+    final originalRequest = loader.request = RemoteImageRequest(uri: key._originalUrl);
     yield* loader.loadRequest(originalRequest, decode, isFinal: true);
   }
 
@@ -179,9 +196,7 @@ class RemoteFullImageProvider extends ImageProvider<RemoteFullImageProvider> {
     }
 
     // always try original for animated, since previews don't support animation
-    final originalRequest = loader.request = RemoteImageRequest(
-      uri: getOriginalUrlForRemoteId(key.assetId, edited: key.edited),
-    );
+    final originalRequest = loader.request = RemoteImageRequest(uri: key._originalUrl);
     final codec = await loader.loadCodecRequest(originalRequest, isFinal: true);
     if (codec == null) {
       if (loader.isCancelled) {
@@ -201,12 +216,13 @@ class RemoteFullImageProvider extends ImageProvider<RemoteFullImageProvider> {
       return assetId == other.assetId &&
           thumbhash == other.thumbhash &&
           isAnimated == other.isAnimated &&
-          edited == other.edited;
+          edited == other.edited &&
+          isEdited == other.isEdited;
     }
 
     return false;
   }
 
   @override
-  int get hashCode => assetId.hashCode ^ thumbhash.hashCode ^ isAnimated.hashCode ^ edited.hashCode;
+  int get hashCode => assetId.hashCode ^ thumbhash.hashCode ^ isAnimated.hashCode ^ edited.hashCode ^ isEdited.hashCode;
 }

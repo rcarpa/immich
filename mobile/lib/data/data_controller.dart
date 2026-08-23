@@ -5,7 +5,9 @@ import 'package:immich_mobile/data/db/main/database.dart';
 import 'package:immich_mobile/data/server/activity.dart';
 import 'package:immich_mobile/data/server/person.dart';
 import 'package:immich_mobile/domain/services/store.service.dart';
+import 'package:immich_mobile/infrastructure/repositories/offline_flags.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/store.repository.dart';
+import 'package:immich_mobile/utils/offline_paths.dart';
 import 'package:openapi/api.dart';
 import 'package:sqlite3/common.dart';
 
@@ -23,8 +25,15 @@ class DataController {
   static Future<(DataController, bool)> init({required ApiClient apiClient, bool disableStoreWatching = false}) async {
     await configureSqliteCache();
 
-    final (db, updatePool) = await openSqliteConnectionWithUpdatePool(name: 'immich');
+    // immich-sync fork: what the user selected and what is stored live in a file of their own, attached here so that a
+    // single statement can read them beside the assets, the albums and the camera roll (`offline_paths.dart`).
+    final (db, updatePool) = await openSqliteConnectionWithUpdatePool(
+      name: 'immich',
+      attachments: [(schema: kOfflineSchema, path: await offlineDatabasePath())],
+    );
     final drift = Drift.sqlite(db, updatePool);
+    // immich-sync fork: its tables, before anything reads them.
+    await OfflineFlagsRepository.ensureInitialized(drift);
 
     final (logDb, wasRecreated) = await _openLoggerDatabase();
 

@@ -11,6 +11,7 @@ import 'package:immich_mobile/presentation/actions/download.action.dart';
 import 'package:immich_mobile/presentation/actions/edit_datetime.action.dart';
 import 'package:immich_mobile/presentation/actions/edit_location.action.dart';
 import 'package:immich_mobile/presentation/actions/favorite.action.dart';
+import 'package:immich_mobile/presentation/actions/keep_offline.action.dart';
 import 'package:immich_mobile/presentation/actions/lock.action.dart';
 import 'package:immich_mobile/presentation/actions/remove_from_album.action.dart';
 import 'package:immich_mobile/presentation/actions/set_album_cover.action.dart';
@@ -90,6 +91,8 @@ class _RemoteAlbumBottomSheetState extends ConsumerState<RemoteAlbumBottomSheet>
           .new(action: FavoriteAction(source: .timeline)),
         ],
         const .new(action: DownloadAction(source: .timeline)),
+        // immich-sync fork: beside Download, never instead of it (FORK.md §3.1.1).
+        const .new(action: KeepOfflineAction(source: .timeline)),
         if (ownsAlbum) ...const [
           .new(action: DeleteAction(source: .timeline)),
           .new(action: EditDateTimeAction(source: .timeline)),

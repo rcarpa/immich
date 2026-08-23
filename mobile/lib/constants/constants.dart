@@ -29,6 +29,20 @@ const String kDownloadGroupVideo = 'group_video';
 const String kDownloadGroupLivePhoto = 'group_livephoto';
 const String kShareDownloadGroup = 'group_share';
 
+// immich-sync fork: the groups whose tasks are tracked in the plugin's database, in place of upstream's global
+// `trackTasks()`. The offline mirror's group is left out on purpose: it enqueues one task per file, six figures of
+// them, and never reads their records back. [kDownloadGroupLivePhoto] is tracked on its own, with different options.
+// Shared by the app and the background worker, so neither tracks the mirror by accident.
+const List<String> kTrackedTaskGroups = [
+  '',
+  kBackupGroup,
+  kManualUploadGroup,
+  kBackupLivePhotoGroup,
+  kDownloadGroupImage,
+  kDownloadGroupVideo,
+  kShareDownloadGroup,
+];
+
 // Timeline constants
 const int kTimelineAssetLoadBatchSize = 1024;
 const int kTimelineAssetLoadOppositeSize = 64;

@@ -46,9 +46,14 @@ class URLSessionManager: NSObject {
     try! FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     return dir
   }()
+  /// immich-sync fork: image bytes are kept by OfflineStore now, which the
+  /// reconciler can see and promote from. A gigabyte of URLCache on top of it
+  /// held a second copy of the same photos, under Caches/ where iOS purges it,
+  /// and cost a second download to get them into the mirror. What is left is for
+  /// the API traffic that still passes through this session.
   private static let urlCache = URLCache(
-    memoryCapacity: 0,
-    diskCapacity: 1024 * 1024 * 1024,
+    memoryCapacity: 8 * 1024 * 1024,
+    diskCapacity: 64 * 1024 * 1024,
     directory: cacheDir
   )
   static let userAgent: String = {

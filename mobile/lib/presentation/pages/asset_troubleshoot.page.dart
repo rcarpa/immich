@@ -7,7 +7,9 @@ import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/models/exif.model.dart';
 import 'package:immich_mobile/extensions/platform_extensions.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
+import 'package:immich_mobile/infrastructure/repositories/settings.repository.dart';
 import 'package:immich_mobile/providers/infrastructure/asset.provider.dart';
+import 'package:immich_mobile/providers/infrastructure/offline.provider.dart';
 
 @RoutePage()
 class AssetTroubleshootPage extends StatelessWidget {
@@ -108,6 +110,9 @@ class _AssetPropertiesSectionState extends ConsumerState<_AssetPropertiesSection
 
   void _addCommonProperties() {
     final asset = widget.asset;
+    // immich-sync fork: read once, since both rows below ask the same service the same kind of question.
+    final offline = ref.read(offlineSyncServiceProvider);
+    final remoteId = asset.remoteId;
     properties.addAll([
       _PropertyItem(label: 'Name', value: asset.name),
       _PropertyItem(label: 'Checksum', value: asset.checksum),
@@ -119,6 +124,20 @@ class _AssetPropertiesSectionState extends ConsumerState<_AssetPropertiesSection
       _PropertyItem(label: 'Duration', value: asset.durationMs != null ? '${asset.durationMs} ms' : null),
       _PropertyItem(label: 'Is Favorite', value: asset.isFavorite.toString()),
       _PropertyItem(label: 'Is Edited', value: asset.isEdited.toString()),
+      // immich-sync fork: the mirror's own view of this asset. Every question the badge and the download rules answer,
+      // in one place — the decisions depend on facts spread over two databases and a setting, and reasoning about which
+      // one is wrong from a screenshot of a tile is guesswork.
+      _PropertyItem(label: 'Storage', value: asset.storage.name),
+      _PropertyItem(label: 'Phone holds it', value: (asset.hasLocal && !asset.isEdited).toString()),
+      _PropertyItem(
+        label: 'Prefer remote images',
+        value: SettingsRepository.instance.appConfig.image.preferRemote.toString(),
+      ),
+      _PropertyItem(
+        label: 'Offline availability',
+        value: remoteId == null ? 'n/a' : offline.availabilityOf(remoteId).name,
+      ),
+      _PropertyItem(label: 'Offline rung', value: remoteId == null ? 'n/a' : offline.wantedOf(remoteId).name),
     ]);
   }
 

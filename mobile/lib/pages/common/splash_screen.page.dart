@@ -19,7 +19,9 @@ import 'package:immich_mobile/providers/app_life_cycle.provider.dart';
 import 'package:immich_mobile/providers/auth.provider.dart';
 import 'package:immich_mobile/providers/background_sync.provider.dart';
 import 'package:immich_mobile/providers/backup/backup.provider.dart';
+import 'package:immich_mobile/providers/infrastructure/offline.provider.dart';
 import 'package:immich_mobile/providers/server_info.provider.dart';
+import 'package:immich_mobile/providers/session_state.provider.dart';
 import 'package:immich_mobile/providers/view_intent/view_intent_handler.provider.dart';
 import 'package:immich_mobile/providers/websocket.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
@@ -283,6 +285,11 @@ class SplashScreenPage extends StatefulHookConsumerWidget {
   SplashScreenPageState createState() => SplashScreenPageState();
 }
 
+/// immich-sync fork: how long the mirror stands back after a cold-start sync, so the timeline gets the connection to
+/// itself for its first read. Long enough to be out of the way, short enough that a photo taken minutes ago is still
+/// mirrored while the app is open.
+const _offlineReconcileDelay = Duration(seconds: 10);
+
 class SplashScreenPageState extends ConsumerState<SplashScreenPage> {
   final log = Logger("SplashScreenPage");
 
@@ -318,14 +325,30 @@ class SplashScreenPageState extends ConsumerState<SplashScreenPage> {
       final backupNotifier = ref.read(backupProvider.notifier);
       final lifeCycle = ref.read(appStateProvider.notifier);
       final viewIntentHandler = ref.read(viewIntentHandlerProvider);
+      // immich-sync fork: read up here with the rest, and for the same reason. This screen is replaced by the tab
+      // shell as soon as `resumeSession` returns — the route change waits for none of the work below — so a `ref`
+      // reached through afterwards is reading from a widget that is already gone. Both of these live on the root
+      // container and outlive every screen, so holding them directly is what the delayed work needs.
+      final sessionIssue = ref.read(sessionIssueProvider.notifier);
+      final offlineSync = ref.read(offlineSyncServiceProvider);
 
       unawaited(
         ref
             .read(authProvider.notifier)
             .saveAuthInfo(accessToken: accessToken)
             .then(
-              (_) async {
+              (authorised) async {
                 try {
+                  // immich-sync fork: upstream discards this answer, and at cold start nothing else notices a rejected
+                  // token — the sync that fails a moment later reports *unreachable*, which is the wrong story and the
+                  // wrong badge until the route guard gets round to validating.
+                  //
+                  // Only with a user still on file: `saveAuthInfo` answers false either for a 401 or for having no
+                  // cached user to fall back on, and only the first is evidence about the token. The second is a launch
+                  // that never reached the server, which says nothing.
+                  if (!authorised && Store.tryGet(StoreKey.currentUser) != null) {
+                    unawaited(sessionIssue.reportRejected());
+                  }
                   wsProvider.connect();
                   unawaited(infoProvider.getServerInfo());
 
@@ -336,6 +359,38 @@ class SplashScreenPageState extends ConsumerState<SplashScreenPage> {
                   ]);
 
                   await viewIntentHandler.flushDeferredViewIntent();
+
+                  // immich-sync fork: the live "offline at cold start" signal.
+                  // saveAuthInfo swallows network errors and resolves normally, so
+                  // onError below rarely fires; a failed remote sync is what does.
+                  if (syncSuccess) {
+                    sessionIssue.clear();
+                  } else {
+                    unawaited(sessionIssue.reportUnreachable());
+                  }
+
+                  // immich-sync fork: metadata is in, so bring the offline copies
+                  // in line with it. On a normal day the full pass runs here and
+                  // nowhere else: once per launch.
+                  //
+                  // After a pause, and this is the point of it. The timeline draws
+                  // nothing at all until one uninterrupted run of its bucket query
+                  // returns, and that query is re-run by every write the sync above
+                  // just made. Starting the mirror's own walk the instant the sync
+                  // finishes puts a second reader on the same connection during the
+                  // one window the screen has to settle in — so the mirror waits,
+                  // because nothing it does is urgent and the user is looking at the
+                  // library right now. By the time the delay is up this widget is long gone, which is why the
+                  // service was taken hold of at the top rather than reached for here.
+                  // Logged here, because by then the try around this whole block has long since completed.
+                  unawaited(
+                    Future<void>.delayed(
+                      _offlineReconcileDelay,
+                      () => offlineSync.reconcile(enqueue: syncSuccess),
+                    ).catchError(
+                      (Object error, StackTrace stack) => log.warning('Offline reconcile failed', error, stack),
+                    ),
+                  );
 
                   if (syncSuccess) {
                     await Future.wait([
@@ -357,13 +412,15 @@ class SplashScreenPageState extends ConsumerState<SplashScreenPage> {
                 }
               },
               onError: (exception) {
-                log.severe('Failed to update auth info with access token: $accessToken');
+                // immich-sync fork (R2): a failure here is almost always "no
+                // network at launch", and logging out would wipe the synced
+                // library. Report it and carry on into what is stored.
+                log.severe('Failed to update auth info with access token');
                 if (!mounted) {
                   return;
                 }
 
-                unawaited(ref.read(authProvider.notifier).logout());
-                unawaited(context.router.replaceAll([const LoginRoute()]));
+                unawaited(ref.read(sessionIssueProvider.notifier).reportRejected());
               },
             ),
       );

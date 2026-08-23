@@ -6,6 +6,7 @@ import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/presentation/actions/action.widget.dart';
 import 'package:immich_mobile/presentation/actions/asset_debug.action.dart';
 import 'package:immich_mobile/presentation/actions/download.action.dart';
+import 'package:immich_mobile/presentation/actions/keep_offline.action.dart';
 import 'package:immich_mobile/presentation/actions/share.action.dart';
 import 'package:immich_mobile/presentation/widgets/album/album_selector.widget.dart';
 import 'package:immich_mobile/presentation/widgets/bottom_sheet/base_bottom_sheet.widget.dart';
@@ -69,6 +70,8 @@ class _PartnerDetailBottomSheetState extends ConsumerState<PartnerDetailBottomSh
         .new(action: AssetDebugAction(source: .timeline)),
         .new(action: ShareAction(source: .timeline)),
         .new(action: DownloadAction(source: .timeline)),
+        // immich-sync fork: beside Download, never instead of it (FORK.md §3.1.1).
+        .new(action: KeepOfflineAction(source: .timeline)),
       ],
       slivers: [
         const AddToAlbumHeader(),

@@ -73,11 +73,21 @@ class NetworkApiImpl: NetworkApi {
       for serverUrl in serverUrls {
         guard let url = URL(string: serverUrl), let domain = url.host else { continue }
         let isSecure = serverUrl.hasPrefix("https")
-        let values: [AuthCookie: String] = [
+        var values: [AuthCookie: String] = [
           .accessToken: token,
           .isAuthenticated: "true",
-          .authType: "password",
         ]
+        // immich-sync fork: the auth type is *seeded* here, never corrected.
+        //
+        // This fork re-seeds the auth cookies from the stored token on every launch (`api.service.dart`), where
+        // upstream writes them once during migration. Writing a fixed value on that path overwrote the `oauth` an OAuth
+        // login had just been given — and the server reads this cookie on logout to decide whether to end the session
+        // at the identity provider, so single sign-out silently stopped happening. Left alone when one is already
+        // there; "password" stands only where there is nothing to preserve.
+        let existing = URLSessionManager.cookieStorage.cookies ?? []
+        if !existing.contains(where: { $0.name == AuthCookie.authType.name && $0.domain == domain }) {
+          values[.authType] = "password"
+        }
         for (cookie, value) in values {
           var properties: [HTTPCookiePropertyKey: Any] = [
             .name: cookie.name,

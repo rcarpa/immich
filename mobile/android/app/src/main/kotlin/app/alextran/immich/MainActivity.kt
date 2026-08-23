@@ -17,6 +17,8 @@ import me.albemala.native_video_player.NativeVideoPlayerPlugin
 import app.alextran.immich.images.LocalImageApi
 import app.alextran.immich.images.LocalImagesImpl
 import app.alextran.immich.images.RemoteImageApi
+import app.alextran.immich.images.OfflineStore
+import app.alextran.immich.images.OfflineStoreChannel
 import app.alextran.immich.images.RemoteImagesImpl
 import app.alextran.immich.permission.PermissionApi
 import app.alextran.immich.permission.PermissionApiImpl
@@ -58,6 +60,10 @@ class MainActivity : FlutterFragmentActivity() {
       PermissionApi.setUp(messenger, permissionApiImpl)
       LocalImageApi.setUp(messenger, LocalImagesImpl(ctx))
       RemoteImageApi.setUp(messenger, RemoteImagesImpl(ctx))
+      // immich-sync fork: the blob store the image path reads through, and the channel Dart keeps
+      // its lookup index in step with.
+      OfflineStore.prepare(ctx)
+      OfflineStoreChannel.register(ctx, messenger)
 
       BackgroundWorkerFgHostApi.setUp(messenger, BackgroundWorkerApiImpl(ctx))
       ConnectivityApi.setUp(messenger, ConnectivityApiImpl(ctx))

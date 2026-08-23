@@ -23,6 +23,8 @@ import 'package:immich_mobile/domain/models/album/local_album.model.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/models/memory.model.dart';
 import 'package:immich_mobile/domain/models/user.model.dart';
+import 'package:immich_mobile/infrastructure/repositories/offline_flags.repository.dart';
+import 'package:immich_mobile/utils/offline_paths.dart';
 import 'package:immich_mobile/utils/option.dart';
 import 'package:uuid/uuid.dart';
 
@@ -32,6 +34,15 @@ class MediumRepositoryContext {
   final Drift db;
 
   MediumRepositoryContext() : db = Drift(DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true));
+
+  /// immich-sync fork: the fork's own schema, attached to this connection as it is on the device.
+  ///
+  /// A second in-memory database rather than a file, which is the whole shape the fork relies on in production too:
+  /// one connection, two schemas, so a statement can join what the user selected against the assets it is about.
+  Future<OfflineFlagsRepository> offlineFlags() async {
+    await db.customStatement("ATTACH DATABASE ':memory:' AS $kOfflineSchema");
+    return OfflineFlagsRepository.forConnection(db);
+  }
 
   Future<void> dispose() async {
     await db.close();

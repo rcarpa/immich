@@ -27,6 +27,12 @@ class BackgroundSyncManager {
   final SyncCallback? onCloudIdSyncComplete;
   final SyncErrorCallback? onCloudIdSyncError;
 
+  /// immich-sync fork: the remote side of the database has changed. Every path that applies server state fires this —
+  /// the sync stream and each websocket batch — because the mirror decides what to fetch from that database and has no
+  /// other way to hear about it. Without it, a photo taken and uploaded while the app stays open is mirrored only after
+  /// a resume, and an album deleted on the server appears to do nothing.
+  final SyncCallback? onRemoteChanged;
+
   Cancelable<bool?>? _syncTask;
   bool _syncQueued = false;
   Cancelable<void>? _syncWebsocketTask;
@@ -48,6 +54,7 @@ class BackgroundSyncManager {
     this.onCloudIdSyncStart,
     this.onCloudIdSyncComplete,
     this.onCloudIdSyncError,
+    this.onRemoteChanged,
   });
 
   // The tasks the app-resume path re-runs. One in-flight when the app was suspended
@@ -173,6 +180,10 @@ class BackgroundSyncManager {
         .then((result) {
           final success = result ?? false;
           onRemoteSyncComplete?.call(success);
+          if (success) {
+            // immich-sync fork
+            onRemoteChanged?.call();
+          }
           _syncQueued &= success;
           return success;
         })
@@ -201,9 +212,14 @@ class BackgroundSyncManager {
       return _syncWebsocketTask!.future;
     }
     _syncWebsocketTask = _handleWsAssetUploadReadyV1Batch(batchData);
-    return _syncWebsocketTask!.whenComplete(() {
-      _syncWebsocketTask = null;
-    });
+    return _syncWebsocketTask!
+        .whenComplete(() {
+          _syncWebsocketTask = null;
+        })
+        // immich-sync fork: not for a cancelled batch. One that failed still gets here, and still costs the mirror a
+        // pass: `runInIsolateGentle` logs the error and completes normally, so telling the two apart would need the
+        // handler to report it.
+        .then((_) => onRemoteChanged?.call());
   }
 
   Future<void> syncWebsocketBatchV2(List<dynamic> batchData) {
@@ -211,9 +227,14 @@ class BackgroundSyncManager {
       return _syncWebsocketTask!.future;
     }
     _syncWebsocketTask = _handleWsAssetUploadReadyV2Batch(batchData);
-    return _syncWebsocketTask!.whenComplete(() {
-      _syncWebsocketTask = null;
-    });
+    return _syncWebsocketTask!
+        .whenComplete(() {
+          _syncWebsocketTask = null;
+        })
+        // immich-sync fork: not for a cancelled batch. One that failed still gets here, and still costs the mirror a
+        // pass: `runInIsolateGentle` logs the error and completes normally, so telling the two apart would need the
+        // handler to report it.
+        .then((_) => onRemoteChanged?.call());
   }
 
   Future<void> syncWebsocketEditV1(dynamic data) {
@@ -221,9 +242,14 @@ class BackgroundSyncManager {
       return _syncWebsocketTask!.future;
     }
     _syncWebsocketTask = _handleWsAssetEditReadyV1(data);
-    return _syncWebsocketTask!.whenComplete(() {
-      _syncWebsocketTask = null;
-    });
+    return _syncWebsocketTask!
+        .whenComplete(() {
+          _syncWebsocketTask = null;
+        })
+        // immich-sync fork: not for a cancelled batch. One that failed still gets here, and still costs the mirror a
+        // pass: `runInIsolateGentle` logs the error and completes normally, so telling the two apart would need the
+        // handler to report it.
+        .then((_) => onRemoteChanged?.call());
   }
 
   Future<void> syncWebsocketEditV2(dynamic data) {
@@ -231,9 +257,14 @@ class BackgroundSyncManager {
       return _syncWebsocketTask!.future;
     }
     _syncWebsocketTask = _handleWsAssetEditReadyV2(data);
-    return _syncWebsocketTask!.whenComplete(() {
-      _syncWebsocketTask = null;
-    });
+    return _syncWebsocketTask!
+        .whenComplete(() {
+          _syncWebsocketTask = null;
+        })
+        // immich-sync fork: not for a cancelled batch. One that failed still gets here, and still costs the mirror a
+        // pass: `runInIsolateGentle` logs the error and completes normally, so telling the two apart would need the
+        // handler to report it.
+        .then((_) => onRemoteChanged?.call());
   }
 
   Future<void> syncLinkedAlbum() {

@@ -16,9 +16,11 @@ import 'package:immich_mobile/providers/infrastructure/platform.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/storage.provider.dart';
 import 'package:immich_mobile/services/api.service.dart';
 import 'package:immich_mobile/utils/image_url_builder.dart';
+import 'package:immich_mobile/utils/offline_paths.dart';
 import 'package:logging/logging.dart';
 import 'package:openapi/api.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -157,7 +159,36 @@ class AssetMediaRepository {
     required String displayName,
     Completer<void>? cancelCompleter,
     required void Function(double progress) onProgress,
+    String? storedUrl,
   }) async {
+    // immich-sync fork: share what is already on the device, since upstream
+    // always fetches from the server and sharing off-grid failed with the bytes
+    // sitting in the store.
+    //
+    // [storedUrl] rather than [url]: sharing asks for `edited=<asset.isEdited>`
+    // and no thumbhash, while the viewer — and so the store — asks for
+    // `edited=true` with one. Same bytes, different cache key, so the lookup has
+    // to use the form the store was filled with.
+    //
+    // Copied rather than shared in place: the share sheet hands the file to
+    // another app, and the store's own copy must not be exposed or moved. Staged
+    // exactly as the download below stages its file — under its own name, in a
+    // directory of the task's — so the receiving app sees the same filename either
+    // way and the same cleanup removes it.
+    final stored = storedUrl == null ? null : await offlineBlobPath(storedUrl);
+    if (stored != null) {
+      final directory = Directory(p.join((await getTemporaryDirectory()).path, taskId));
+      try {
+        await directory.create(recursive: true);
+        final copy = await File(stored).copy(p.join(directory.path, displayName));
+        onProgress(1);
+        return (file: copy, tempEntity: directory, displayName: displayName);
+      } catch (error, stack) {
+        await cleanupTempFiles([directory]);
+        _log.warning('Could not share the stored copy of $displayName; falling back to download', error, stack);
+      }
+    }
+
     final task = DownloadTask(
       taskId: taskId,
       url: url,
@@ -205,6 +236,19 @@ class AssetMediaRepository {
     return _downloadRemoteShareFile(
       taskId: 'share-original-$remoteId-${DateTime.now().microsecondsSinceEpoch}',
       url: getOriginalUrlForRemoteId(remoteId, edited: asset.isEdited),
+      // A video is stored in the form the player asks for, which is its
+      // original only while "load original video" is on. Otherwise the store
+      // holds the re-encoded playback file, and sharing that under the
+      // original's name would hand over the wrong bytes. So the lookup always
+      // names the original: it finds one whenever the store holds it — even
+      // from before the setting was turned off — and downloads otherwise.
+      storedUrl: asset.isVideo
+          ? offlineVideoUrl(remoteId, form: 'original')
+          : offlineOriginalUrl(
+              remoteId,
+              isEdited: asset.isEdited,
+              thumbHash: asset is RemoteAsset ? asset.thumbHash ?? '' : '',
+            ),
       displayName: displayName,
       cancelCompleter: cancelCompleter,
       onProgress: onProgress,
@@ -221,6 +265,13 @@ class AssetMediaRepository {
     return _downloadRemoteShareFile(
       taskId: 'share-preview-$remoteId-${DateTime.now().microsecondsSinceEpoch}',
       url: getThumbnailUrlForRemoteId(remoteId, type: AssetMediaSize.preview, edited: asset.isEdited),
+      storedUrl: getThumbnailUrlForRemoteId(
+        remoteId,
+        type: AssetMediaSize.preview,
+        // `''`, matching `OfflineRepository.detailsFor`: null would append no `c=`
+        // and name a file the store was never filled under.
+        thumbhash: asset is RemoteAsset ? asset.thumbHash ?? '' : '',
+      ),
       displayName: displayName,
       cancelCompleter: cancelCompleter,
       onProgress: onProgress,

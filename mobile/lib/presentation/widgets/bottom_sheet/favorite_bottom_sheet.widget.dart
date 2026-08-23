@@ -11,6 +11,7 @@ import 'package:immich_mobile/presentation/actions/download.action.dart';
 import 'package:immich_mobile/presentation/actions/edit_datetime.action.dart';
 import 'package:immich_mobile/presentation/actions/edit_location.action.dart';
 import 'package:immich_mobile/presentation/actions/favorite.action.dart';
+import 'package:immich_mobile/presentation/actions/keep_offline.action.dart';
 import 'package:immich_mobile/presentation/actions/lock.action.dart';
 import 'package:immich_mobile/presentation/actions/share.action.dart';
 import 'package:immich_mobile/presentation/actions/share_link.action.dart';
@@ -79,6 +80,8 @@ class FavoriteBottomSheet extends ConsumerWidget {
         .new(action: FavoriteAction(source: .timeline)),
         .new(action: ArchiveAction(source: .timeline)),
         .new(action: DownloadAction(source: .timeline)),
+        // immich-sync fork: beside Download, never instead of it (FORK.md §3.1.1).
+        .new(action: KeepOfflineAction(source: .timeline)),
         .new(action: DeleteAction(source: .timeline)),
         .new(action: EditDateTimeAction(source: .timeline)),
         .new(action: EditLocationAction(source: .timeline)),

@@ -113,14 +113,22 @@ Future<void> initApp() async {
   // Initialize the file downloader
   await FileDownloader().configure(
     // maxConcurrent: 6, maxConcurrentByHost(server):6, maxConcurrentByGroup: 3
+    // immich-sync fork: 16, 16, 8. The offline mirror is one group, and most of a
+    // library is small files whose speed is set by how many run at once, not by
+    // bandwidth (FORK.md §3.3). Raises upstream's upload groups to 8 too.
 
     // On Android, if files are larger than 256MB, run in foreground service
-    globalConfig: [(Config.holdingQueue, (6, 6, 3)), (Config.runInForegroundIfFileLargerThan, 256)],
+    globalConfig: [(Config.holdingQueue, (16, 16, 8)), (Config.runInForegroundIfFileLargerThan, 256)],
   );
 
   await FileDownloader().trackTasksInGroup(kDownloadGroupLivePhoto, markDownloadedComplete: false);
 
-  unawaited(FileDownloader().trackTasks());
+  // immich-sync fork: tracked per group rather than globally. The offline mirror
+  // enqueues one task per file — six figures of them — and never reads their
+  // records back, so `trackTasks()` means a database write and delete per blob.
+  for (final group in kTrackedTaskGroups) {
+    unawaited(FileDownloader().trackTasksInGroup(group));
+  }
 
   LicenseRegistry.addLicense(() async* {
     for (final license in nonPubLicenses.entries) {
