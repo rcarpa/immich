@@ -13,9 +13,24 @@ if (keystorePropertiesFile.exists()) {
   keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
 }
 
+// immich-sync fork: the app id, from `Identity.properties` with an optional local override.
+def identity = new Properties()
+[rootProject.file('Identity.properties'), rootProject.file('Identity.local.properties')].each { file ->
+  if (file.exists()) {
+    file.withInputStream { identity.load(it) }
+  }
+}
+
 android {
   compileSdk = flutter.compileSdkVersion
   ndkVersion = flutter.ndkVersion
+
+  // immich-sync fork: `-PmirrichCompactLibs=true` compresses the native libraries, halving the APK download.
+  packaging {
+    jniLibs {
+      useLegacyPackaging = (project.findProperty('mirrichCompactLibs') ?: 'false').toBoolean()
+    }
+  }
 
   compileOptions {
     sourceCompatibility JavaVersion.VERSION_17
@@ -37,12 +52,14 @@ android {
   }
 
   defaultConfig {
-    applicationId "app.alextran.immich"
+    // immich-sync fork: see `android/Identity.properties`; upstream's id is the default.
+    applicationId identity.getProperty('applicationId', 'app.alextran.immich')
     minSdk = 26
     targetSdk = flutter.targetSdkVersion
     versionCode flutter.versionCode
     versionName flutter.versionName
-    resValue "string", "app_name", "Immich"
+    // immich-sync fork: the launcher label. Upstream's manifest reads it from here.
+    resValue "string", "app_name", "Mirrich"
   }
 
   signingConfigs {

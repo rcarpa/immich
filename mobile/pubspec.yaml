@@ -150,9 +150,11 @@ flutter:
         - asset: fonts/GoogleSansCode/GoogleSansCode-SemiBold.ttf
           weight: 600
 flutter_launcher_icons:
-  image_path_android: 'assets/immich-logo.png'
-  adaptive_icon_background: '#ffffff'
-  adaptive_icon_foreground: 'assets/immich-logo-android-adaptive-icon.png'
+  # immich-sync fork: the fork's own mark, so the launcher does not show two identical icons
+  # (§4.1). The background matches the light launch ground rather than plain white.
+  image_path_android: 'assets/mirrich-logo.png'
+  adaptive_icon_background: '#fff8ee'
+  adaptive_icon_foreground: 'assets/mirrich-logo-android-adaptive-icon.png'
   image_path_ios: 'assets/immich-logo-w-bg.png'
   android: 'ic_launcher'
   ios: false
