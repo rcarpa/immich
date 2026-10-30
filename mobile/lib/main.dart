@@ -41,6 +41,7 @@ import 'package:immich_mobile/utils/bootstrap.dart';
 import 'package:immich_mobile/utils/brand_translation_loader.dart';
 import 'package:immich_mobile/utils/cache/widgets_binding.dart';
 import 'package:immich_mobile/utils/debug_print.dart';
+import 'package:immich_mobile/utils/launch_probe.dart';
 import 'package:immich_mobile/utils/licenses.dart';
 import 'package:immich_mobile/utils/migration.dart';
 import 'package:immich_mobile/wm_executor.dart';
@@ -59,9 +60,15 @@ void main() async {
     MapLibreMap.useHybridComposition = true;
 
     ImmichWidgetsBinding();
+    // immich-sync fork, temporary instrumentation — see `utils/launch_probe.dart`, and remove with it.
+    LaunchProbe.start();
     unawaited(BackgroundWorkerLockService(BackgroundWorkerLockApi()).lock());
     await EasyLocalization.ensureInitialized();
     final (dataController, apiService) = await Bootstrap.initDomain();
+    // immich-sync fork: past this line there is a logger listening and a level to correct, and a database to ask
+    // whether it is answering at all while the timeline waits on it.
+    LaunchProbe.ready();
+    LaunchProbe.watchDatabase(dataController.db);
     await initApp();
     // Warm-up isolate pool for worker manager
     await workerManagerPatch.init(dynamicSpawning: true, isolatesCount: max(Platform.numberOfProcessors - 1, 5));

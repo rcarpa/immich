@@ -28,6 +28,7 @@ import 'package:immich_mobile/routing/router.dart';
 import 'package:immich_mobile/theme/color_scheme.dart';
 import 'package:immich_mobile/theme/theme_data.dart';
 import 'package:immich_mobile/utils/brand_translation_loader.dart';
+import 'package:immich_mobile/utils/launch_probe.dart';
 import 'package:immich_mobile/widgets/common/immich_logo.dart';
 import 'package:immich_mobile/widgets/common/immich_title_text.dart';
 import 'package:logging/logging.dart';
@@ -353,9 +354,15 @@ class SplashScreenPageState extends ConsumerState<SplashScreenPage> {
                   unawaited(infoProvider.getServerInfo());
 
                   bool syncSuccess = false;
+                  // immich-sync fork, temporary instrumentation — see `utils/launch_probe.dart`, and remove with it.
+                  // These two are what write the tables the timeline's own query watches, so where they begin and end
+                  // is the frame every other line has to be read against.
                   await Future.wait([
-                    backgroundManager.syncLocal(full: true),
-                    backgroundManager.syncRemote().then((success) => syncSuccess = success),
+                    LaunchProbe.time('the local sync', () => backgroundManager.syncLocal(full: true)),
+                    LaunchProbe.time(
+                      'the remote sync',
+                      () => backgroundManager.syncRemote().then((success) => syncSuccess = success),
+                    ),
                   ]);
 
                   await viewIntentHandler.flushDeferredViewIntent();

@@ -34,6 +34,13 @@
 # stays at zero.
 set -euo pipefail
 
+# The launch probe (`lib/utils/launch_probe.dart`) is off in every build unless asked for:
+# MIRRICH_LAUNCH_PROBE=1 ./tools/build_release.sh ...
+PROBE=()
+if [[ ${MIRRICH_LAUNCH_PROBE:-} == 1 ]]; then
+  PROBE=(--dart-define=MIRRICH_LAUNCH_PROBE=true)
+fi
+
 cd "$(dirname "$0")/.."
 
 ENV_FILE="tools/altstore.env"
@@ -236,7 +243,8 @@ PLIST_EOF
   echo "==> Building (release, signed for ${MIRRICH_EXPORT_METHOD:-app-store-connect}, team $TEAM_ID)"
   mise exec -- flutter build ipa --release \
     --build-name "$BUILD_NAME" --build-number "$BUILD_NUMBER" \
-    --export-options-plist "$PLIST"
+    --export-options-plist "$PLIST" \
+    ${PROBE[@]+"${PROBE[@]}"}
 
   BUILT=$(find build/ios/ipa -maxdepth 1 -name '*.ipa' -print -quit)
   [[ -n $BUILT ]] || {
@@ -301,7 +309,7 @@ fi
 # install, so there is no signature to void.
 # ---------------------------------------------------------------------------
 echo "==> Building (release, unsigned)"
-mise exec -- flutter build ios --release --no-codesign
+mise exec -- flutter build ios --release --no-codesign ${PROBE[@]+"${PROBE[@]}"}
 
 APP=$(find build/ios/iphoneos -maxdepth 1 -name '*.app' -print -quit)
 [[ -n $APP ]] || { echo "error: no .app in build/ios/iphoneos" >&2; exit 1; }

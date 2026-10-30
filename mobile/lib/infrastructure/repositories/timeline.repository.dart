@@ -20,6 +20,7 @@ import 'package:immich_mobile/domain/services/timeline.service.dart';
 import 'package:immich_mobile/infrastructure/repositories/map.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/timeline.repository.drift.dart';
 import 'package:immich_mobile/infrastructure/repositories/timeline_bucket_cache.repository.dart';
+import 'package:immich_mobile/utils/launch_probe.dart';
 import 'package:immich_mobile/utils/serial_runner.dart';
 import 'package:stream_transform/stream_transform.dart';
 
@@ -87,6 +88,13 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
       return TimeBucket(date: date, assetCount: row.assetCount);
     });
 
+    // immich-sync fork, temporary instrumentation — see `utils/launch_probe.dart`, and remove with it. The re-run is
+    // registered rather than started: it is only worth having once the pages are warm, which is after the paint.
+    final probe = LaunchProbe.bucketStream(userIds);
+    if (userIds.isNotEmpty) {
+      LaunchProbe.warmRerun(query.get);
+    }
+
     // immich-sync fork: drift's own `watch()` calls the statement directly, and answers every write to a table it
     // reads by cancelling the run in flight and starting another. That cancellation cannot reach a statement SQLite
     // has already begun, so the abandoned run still performs its whole read — and on a large library this one reads
@@ -99,26 +107,31 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
     final key = TimelineBucketCache.keyFor(userIds, groupBy);
     final runner = _bucketRunners.putIfAbsent(key, SerialRunner<List<Bucket>>.new);
 
-    final live = _db.createStream(
-      QueryStreamFetcher<List<Bucket>>(
-        readsFrom: TableUpdateQuery.onAllTables(
-          _db.allTables.where((table) => mainBucketTables.contains(table.actualTableName)),
-        ),
-        // immich-sync fork: what drift dedupes watched statements by. Supplying the fetch means supplying this
-        // too, and without it the two timeline services alive at once — the tab shell builds one before the user
-        // list resolves and one after — each get a stream of their own and each run the query, doubling the work
-        // per generation. Drift's own keys are the statement's SQL text, so a namespaced name cannot collide with
-        // one; and the only site that produces this key is this one, so the cast `registerStream` makes on a hit
-        // is always to the type it was stored as.
-        key: StreamKey('immich-sync:mergedBucket', [key]),
-        fetchData: () => runner.run(() async {
-          final startedAt = DateTime.now();
-          final buckets = await query.get();
-          _startedAt[buckets] = startedAt;
+    final live = _db
+        .createStream(
+          QueryStreamFetcher<List<Bucket>>(
+            readsFrom: TableUpdateQuery.onAllTables(
+              _db.allTables.where((table) => mainBucketTables.contains(table.actualTableName)),
+            ),
+            // immich-sync fork: what drift dedupes watched statements by. Supplying the fetch means supplying this
+            // too, and without it the two timeline services alive at once — the tab shell builds one before the user
+            // list resolves and one after — each get a stream of their own and each run the query, doubling the work
+            // per generation. Drift's own keys are the statement's SQL text, so a namespaced name cannot collide with
+            // one; and the only site that produces this key is this one, so the cast `registerStream` makes on a hit
+            // is always to the type it was stored as.
+            key: StreamKey('immich-sync:mergedBucket', [key]),
+            fetchData: () => runner.run(() async {
+              final startedAt = DateTime.now();
+              final buckets = await query.get();
+              _startedAt[buckets] = startedAt;
+              return buckets;
+            }),
+          ),
+        )
+        .map((buckets) {
+          probe.emitted(buckets.length);
           return buckets;
-        }),
-      ),
-    );
+        });
 
     // immich-sync fork: with no user there is nothing to count, so the query is already instant and a cache lookup
     // would be pure cost at the busiest moment of the launch.
@@ -152,6 +165,7 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
     }
     final cached = await _bucketCache.read(key);
     if (cached != null) {
+      LaunchProbe.mark('drawing ${cached.length} bucket(s) from the cache while the query runs');
       yield cached;
     }
     yield* live;

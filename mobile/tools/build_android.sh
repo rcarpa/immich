@@ -226,6 +226,12 @@ if [[ $COMPACT -eq 1 ]]; then
   echo "==> Compact: arm64-v8a only, native libraries compressed"
 fi
 
+# The launch probe (`lib/utils/launch_probe.dart`) is off in every build unless asked for.
+if [[ ${MIRRICH_LAUNCH_PROBE:-} == 1 ]]; then
+  STAMP+=(--dart-define=MIRRICH_LAUNCH_PROBE=true)
+  echo "==> Launch probe on"
+fi
+
 mkdir -p "$OUT_DIR/all" "$OUT_DIR/latest"
 rm -f "$OUT_DIR/latest"/*
 

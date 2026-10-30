@@ -22,6 +22,7 @@ import 'package:immich_mobile/infrastructure/repositories/offline_flags.reposito
 import 'package:immich_mobile/infrastructure/repositories/settings.repository.dart';
 import 'package:immich_mobile/utils/async_mutex.dart';
 import 'package:immich_mobile/utils/image_url_builder.dart';
+import 'package:immich_mobile/utils/launch_probe.dart';
 import 'package:immich_mobile/utils/offline_paths.dart';
 import 'package:immich_mobile/utils/offline_reclaim.dart';
 import 'package:logging/logging.dart';
@@ -694,8 +695,14 @@ class OfflineSyncService {
   /// no longer a watermark to advance, a recent window to re-scan or a set of changed albums to work out — all three
   /// existed only to avoid a derivation that cost a page-by-page walk of the library, and it no longer does.
   Future<void> check({bool download = true}) async {
-    await _ready;
-    await _check(download: download);
+    // immich-sync fork, temporary instrumentation — see `utils/launch_probe.dart`, and remove with it. The mirror is
+    // the other reader of this database, so what it costs and when it runs has to be visible beside the timeline's
+    // own numbers, or its share of the delay can only be guessed at. [_ready] is inside the timing and not before it:
+    // it is a read of that same database, so on a cold start it queues with everything else and is part of the cost.
+    await LaunchProbe.time('an offline check', () async {
+      await _ready;
+      await _check(download: download);
+    });
   }
 
   Future<void> _check({bool download = true}) async {
