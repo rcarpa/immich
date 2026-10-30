@@ -171,7 +171,19 @@ class TimelineService {
     _buffer = await _assetSource(start, len);
     _bufferOffset = start;
 
-    return getAssets(index, count);
+    // immich-sync fork: hand back what is actually there, rather than throwing when it is less than the buckets said.
+    //
+    // The counts and the assets are two reads of a database that a sync may have written between them, so they can
+    // always disagree by a little; since the launch now draws from a bucket list that may be a session old
+    // (`timeline_bucket_cache.repository.dart`), they can briefly disagree by more. `getAssets` answers that with a
+    // `RangeError`, and the tile path calls it through `snapshot.requireData` — an exception in the middle of a build,
+    // for a condition that is temporary and self-correcting. A row that renders a tile short for the second it takes
+    // the real counts to land is the better failure by far.
+    final available = _bufferOffset + _buffer.length - index;
+    if (available <= 0) {
+      return const [];
+    }
+    return getAssets(index, math.min(count, available));
   }
 
   bool hasRange(int index, int count) =>

@@ -1915,6 +1915,11 @@ Every one is a hook or an addition; none removes an upstream feature (R5).
 | `lib/services/api.service.dart` | Re-seed the auth cookie from the stored token |
 | `lib/data/data_controller.dart` | Attach the fork database where upstream opens its own, and create its tables before the store is read |
 | `lib/main.dart` | Track downloader tasks per group, not globally; downloader concurrency `(16, 16, 8)` instead of `(6, 6, 3)` (§3.3) |
+| `lib/data/db/main/database.dart` | Throttle table-update events per watched statement, 500 ms leading and trailing — **every** upstream watched query, not only the fork's: a burst of writes re-runs a statement twice instead of once per commit; `reset()` also empties the bucket cache, which lives outside `main` |
+| `lib/infrastructure/repositories/timeline.repository.dart` | The main bucket query runs through a `SerialRunner` (a run that starts also finishes) and draws last launch's bucket list first |
+| `lib/infrastructure/repositories/timeline_bucket_cache.repository.dart` | Last launch's bucket list, in the fork's schema |
+| `lib/infrastructure/repositories/sync_stream.repository.dart` | Empty the bucket cache in `reset()` (sign-out and a server-requested reset) |
+| `lib/domain/services/timeline.service.dart` | Return the assets that are there instead of throwing when the counts ran ahead of them |
 | `lib/domain/models/settings_key.dart`, `config/app_config.dart` | Four settings keys: the selection, Wi-Fi only, pause, and the storage limit |
 
 There is no fork-flag switchboard. A single always-true `bool` reads as something
@@ -2164,6 +2169,10 @@ re-verify by hand:
   divergence is invisible — the mirror simply stops being read from. Run
   `./gradlew :app:testDebugUnitTest --tests '*OfflineStoreNamingTest*'` beside the
   Dart test whenever any of the three moves (§3.4.3).
+- The table-update throttle in `database.dart` still sits **after** the per-statement filter and
+  still delivers its trailing event. Before the filter, one statement's writes would delay
+  another's; without the trailing event an invalidation would be dropped rather than deferred,
+  and a screen would stop following the database.
 - `OfflineStore.swift` is still in the Runner target's *Compile Sources*. A
   rebase that takes upstream's `project.pbxproj` silently drops it, and the
   offline library stops existing — see `BUILDING.md` §3.4.

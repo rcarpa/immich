@@ -1,7 +1,13 @@
 import 'dart:async';
 
 import 'package:drift/drift.dart';
+// immich-sync fork: `QueryStreamFetcher` is what lets a watched statement be driven by a fetch we supply rather
+// than by drift's own — see [_watchMainBucket]. `data/db/main/database.dart` reaches into the same library, for the
+// `StreamQueryStore` it subclasses.
+// ignore: implementation_imports, invalid_use_of_internal_member
+import 'package:drift/src/runtime/executor/stream_queries.dart' show QueryStreamFetcher, StreamKey;
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:immich_mobile/data/db/main/database.dart';
 import 'package:immich_mobile/data/db/main/table/local/asset.dart';
 import 'package:immich_mobile/data/db/main/table/remote/asset.dart';
@@ -13,6 +19,8 @@ import 'package:immich_mobile/domain/models/timeline.model.dart';
 import 'package:immich_mobile/domain/services/timeline.service.dart';
 import 'package:immich_mobile/infrastructure/repositories/map.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/timeline.repository.drift.dart';
+import 'package:immich_mobile/infrastructure/repositories/timeline_bucket_cache.repository.dart';
+import 'package:immich_mobile/utils/serial_runner.dart';
 import 'package:stream_transform/stream_transform.dart';
 
 @DriftAccessor()
@@ -20,6 +28,36 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
   TimelineRepository(super.attachedDatabase);
 
   Drift get _db => attachedDatabase;
+
+  /// immich-sync fork: one runner per distinct bucket query, so two subscriptions to the same one — which happens
+  /// whenever the timeline's service is rebuilt — share a single scan instead of racing two. See [_watchMainBucket].
+  final Map<String, SerialRunner<List<Bucket>>> _bucketRunners = {};
+
+  /// immich-sync fork: see [_cachedFirst]. One per repository, which is one per database.
+  late final TimelineBucketCache _bucketCache = TimelineBucketCache(_db);
+
+  /// immich-sync fork: keys whose live query has answered this session. From then on drift hands a new listener the
+  /// current list straight away, so the cache could only put an older one in front of it. See [_cachedFirst].
+  final Set<String> _answeredLive = {};
+
+  /// immich-sync fork: when the query behind each bucket list started, for the cache — a list whose query started
+  /// before the cache was last cleared describes a library that is gone (`TimelineBucketCache.clear`). Attached to the
+  /// list itself, because the run that produced a list is shared, and by the time the stream delivers it the next run
+  /// may already have started.
+  static final _startedAt = Expando<DateTime>('bucket query started');
+
+  /// immich-sync fork: the tables `mergedBucket` in `merged_asset.drift` reads, which is what invalidates the main
+  /// bucket stream. Drift derives this list for its own `watch()`, but the generated statement is behind a `.map()`
+  /// that does not expose it, so [_watchMainBucket] has to name it. A test reads the query and fails when the two
+  /// disagree; without it, a table upstream adds to the query would never refresh the timeline.
+  @visibleForTesting
+  static const mainBucketTables = {
+    'remote_asset_entity',
+    'stack_entity',
+    'local_asset_entity',
+    'local_album_asset_entity',
+    'local_album_entity',
+  };
 
   Stream<List<String>> watchTimelineUserIds(String userId) {
     final query = _db.partnerEntity.selectOnly()
@@ -44,10 +82,79 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
       throw UnsupportedError("GroupAssetsBy.none is not supported for watchMainBucket");
     }
 
-    return _db.mergedAssetDrift.mergedBucket(userIds: userIds, groupBy: groupBy.index).map((row) {
+    final query = _db.mergedAssetDrift.mergedBucket(userIds: userIds, groupBy: groupBy.index).map((row) {
       final date = row.bucketDate.truncateDate(groupBy);
       return TimeBucket(date: date, assetCount: row.assetCount);
-    }).watch();
+    });
+
+    // immich-sync fork: drift's own `watch()` calls the statement directly, and answers every write to a table it
+    // reads by cancelling the run in flight and starting another. That cancellation cannot reach a statement SQLite
+    // has already begun, so the abandoned run still performs its whole read — and on a large library this one reads
+    // well over a hundred megabytes. Writes arrive far faster than that (hashing commits once per 32 photos, a first
+    // sync once per 5,000-event chunk), so the query is restarted before it can ever finish, for as long as the
+    // writing lasts. Supplying the fetch is what lets [SerialRunner] guarantee a run that starts also completes.
+    // Everything else about the stream stays drift's.
+    // One key for the runner, the drift stream and the cache, so they agree on what counts as the same query. Sorted
+    // inside `keyFor`: the user list can resolve in any order, and the answer does not depend on it.
+    final key = TimelineBucketCache.keyFor(userIds, groupBy);
+    final runner = _bucketRunners.putIfAbsent(key, SerialRunner<List<Bucket>>.new);
+
+    final live = _db.createStream(
+      QueryStreamFetcher<List<Bucket>>(
+        readsFrom: TableUpdateQuery.onAllTables(
+          _db.allTables.where((table) => mainBucketTables.contains(table.actualTableName)),
+        ),
+        // immich-sync fork: what drift dedupes watched statements by. Supplying the fetch means supplying this
+        // too, and without it the two timeline services alive at once — the tab shell builds one before the user
+        // list resolves and one after — each get a stream of their own and each run the query, doubling the work
+        // per generation. Drift's own keys are the statement's SQL text, so a namespaced name cannot collide with
+        // one; and the only site that produces this key is this one, so the cast `registerStream` makes on a hit
+        // is always to the type it was stored as.
+        key: StreamKey('immich-sync:mergedBucket', [key]),
+        fetchData: () => runner.run(() async {
+          final startedAt = DateTime.now();
+          final buckets = await query.get();
+          _startedAt[buckets] = startedAt;
+          return buckets;
+        }),
+      ),
+    );
+
+    // immich-sync fork: with no user there is nothing to count, so the query is already instant and a cache lookup
+    // would be pure cost at the busiest moment of the launch.
+    if (userIds.isEmpty) {
+      return live;
+    }
+
+    return _cachedFirst(
+      key,
+      live.map((buckets) {
+        _answeredLive.add(key);
+        unawaited(_bucketCache.remember(key, buckets, startedAt: _startedAt[buckets]));
+        return buckets;
+      }),
+    );
+  }
+
+  /// immich-sync fork: last launch's answer, then this launch's.
+  ///
+  /// The cached list is yielded before [live] is subscribed, so it can never arrive after a real result and undo it.
+  /// A miss — which is every failure this cache has, see `timeline_bucket_cache.repository.dart` — leaves the stream
+  /// exactly as it was: one that emits when the query finally returns.
+  ///
+  /// Only until the live query has answered for [key]. The grid re-subscribes whenever its layout changes (a rotation,
+  /// a pinch to a different column count), and by then the cache is up to a write window behind what is on screen:
+  /// drawing it first would flash an older list, and make the re-layout wait for the read.
+  Stream<List<Bucket>> _cachedFirst(String key, Stream<List<Bucket>> live) async* {
+    if (_answeredLive.contains(key)) {
+      yield* live;
+      return;
+    }
+    final cached = await _bucketCache.read(key);
+    if (cached != null) {
+      yield cached;
+    }
+    yield* live;
   }
 
   Future<List<BaseAsset>> _getMainBucketAssets(List<String> userIds, {required int offset, required int count}) {

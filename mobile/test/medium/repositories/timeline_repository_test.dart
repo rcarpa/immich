@@ -1,6 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
+import 'package:immich_mobile/domain/models/timeline.model.dart';
 import 'package:immich_mobile/infrastructure/repositories/timeline.repository.dart';
+import 'package:immich_mobile/infrastructure/repositories/timeline_bucket_cache.repository.dart';
+import 'package:immich_mobile/utils/offline_paths.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 import '../repository_context.dart';
@@ -20,6 +25,56 @@ void main() {
 
   tearDown(() async {
     await ctx.dispose();
+  });
+
+  // immich-sync fork: the main bucket stream names its tables by hand, so it must keep up with the query.
+  test('the main bucket stream is invalidated by every table mergedBucket reads', () {
+    final source = File('lib/data/db/main/query/merged_asset.drift').readAsStringSync();
+    final start = source.indexOf('mergedBucket(');
+    expect(start, isNot(-1), reason: 'mergedBucket was renamed or moved');
+    final statement = source.substring(start, source.indexOf(';', start));
+    final read = {
+      for (final match in RegExp(r'\b(?:FROM|JOIN)\s+(\w+)', caseSensitive: false).allMatches(statement)) match[1]!,
+    };
+
+    expect(TimelineRepository.mainBucketTables, read);
+    // A misspelt name would be dropped silently by the lookup, so each one must also be a real table.
+    expect(ctx.db.allTables.map((table) => table.actualTableName), containsAll(TimelineRepository.mainBucketTables));
+  });
+
+  // immich-sync fork: last launch's bucket list is drawn first, but only until this launch's query has answered.
+  group('main bucket cache', () {
+    test('is drawn before the first answer, and not on a re-subscription after it', () async {
+      await ctx.db.customStatement("ATTACH DATABASE ':memory:' AS $kOfflineSchema");
+      await TimelineBucketCache.ensureSchema(ctx.db);
+      final user = await ctx.newUser();
+      await ctx.newRemoteAsset(ownerId: user.id, createdAt: DateTime.utc(2024, 9, 2, 12));
+      final stale = <Bucket>[TimeBucket(date: DateTime(2020, 1, 1), assetCount: 99)];
+      await TimelineBucketCache(ctx.db).remember(TimelineBucketCache.keyFor([user.id], .day), stale);
+
+      final query = sut.main([user.id], .day);
+
+      final seen = <List<Bucket>>[];
+      final subscription = query.bucketSource().listen(seen.add);
+      addTearDown(subscription.cancel);
+      Future<void> waitFor(int count) async {
+        while (seen.length < count) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+      }
+
+      await waitFor(2);
+      expect(seen[0], stale);
+      expect(seen[1].single.assetCount, 1);
+
+      // A change inside the cache's write window: the stored list is now behind the live one.
+      await ctx.newRemoteAsset(ownerId: user.id, createdAt: DateTime.utc(2024, 9, 2, 13));
+      await waitFor(3);
+      expect(seen[2].single.assetCount, 2);
+
+      // The grid re-subscribes on every layout change. It must see the current list first, not the cache.
+      expect(await query.bucketSource().first, seen[2]);
+    });
   });
 
   group('remoteAlbum assets', () {

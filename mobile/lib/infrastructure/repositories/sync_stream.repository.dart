@@ -30,6 +30,7 @@ import 'package:immich_mobile/domain/models/user.model.dart';
 import 'package:immich_mobile/domain/models/user_metadata.model.dart';
 import 'package:immich_mobile/extensions/string_extensions.dart';
 import 'package:immich_mobile/infrastructure/repositories/sync_stream.repository.drift.dart';
+import 'package:immich_mobile/infrastructure/repositories/timeline_bucket_cache.repository.dart';
 import 'package:immich_mobile/infrastructure/utils/exif.converter.dart';
 import 'package:logging/logging.dart';
 import 'package:openapi/api.dart' as api show AlbumUserRole, AssetEditAction, AssetVisibility, UserMetadataKey;
@@ -81,6 +82,8 @@ class SyncStreamRepository extends DatabaseAccessor<Drift> with $SyncStreamRepos
           await _db.customStatement('PRAGMA foreign_keys = ON');
         }
       });
+      // immich-sync fork: the timeline's bucket cache lives outside `main` and describes the library just deleted.
+      await TimelineBucketCache.clear(_db);
     } catch (error, stack) {
       _logger.severe('Error: SyncResetV1', error, stack);
       rethrow;

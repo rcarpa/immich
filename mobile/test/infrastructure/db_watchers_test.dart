@@ -47,6 +47,31 @@ void main() {
     await compute(_writerTask, path);
     await emissionFuture;
   });
+
+  test('a burst of writes costs fewer refreshes than it has writes, and the last one still arrives', () async {
+    final (db, dbConnection, _) = await openDb();
+
+    addTearDown(() async {
+      await db.close();
+      await dbConnection.close();
+    });
+
+    final seen = <int>[];
+    final subscription = db.select(db.storeEntity).watch().map((rows) => rows.length).listen(seen.add);
+
+    // All inside one invalidation window. Untamed, drift re-runs the statement once per write — and on a statement
+    // that is expensive, cancels a run that has already begun reading in order to do so.
+    for (var id = 1; id <= 10; id++) {
+      await db.into(db.storeEntity).insert(StoreEntityCompanion(id: Value(id), intValue: Value(id)));
+    }
+
+    // Long enough for the window to close and hand over what it held back.
+    await Future<void>.delayed(const Duration(seconds: 2));
+    await subscription.cancel();
+
+    expect(seen.last, 10, reason: 'the write that closed the window must still be observed');
+    expect(seen.length, lessThan(10), reason: 'a burst must not cost one re-run per write');
+  });
 }
 
 Future<void> _writerTask(String path) async {

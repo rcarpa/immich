@@ -50,6 +50,7 @@ import 'package:immich_mobile/infrastructure/repositories/store.repository.dart'
 import 'package:immich_mobile/infrastructure/repositories/sync_migration.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/sync_stream.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/timeline.repository.dart';
+import 'package:immich_mobile/infrastructure/repositories/timeline_bucket_cache.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/trashed_local_asset.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/user.repository.dart';
 import 'package:logging/logging.dart';
@@ -59,6 +60,7 @@ import 'package:sqlite3/sqlite3.dart';
 import 'package:sqlite3_connection_pool/sqlite3_connection_pool.dart';
 import 'package:sqlite_async/native.dart';
 import 'package:sqlite_async/sqlite_async.dart';
+import 'package:stream_transform/stream_transform.dart';
 
 @DriftDatabase(
   tables: [
@@ -142,6 +144,9 @@ class Drift extends $Drift {
         OpeningDetails(null, schemaVersion),
       );
       await customStatement('PRAGMA user_version = $schemaVersion');
+      // immich-sync fork: the attached schema survives the wipe above, and the timeline's bucket cache in it describes
+      // the library that just went.
+      await TimelineBucketCache.clear(this);
 
       // Refresh all stream queries
       notifyUpdates({for (final table in allTables) TableUpdate.onTable(table)});
@@ -448,6 +453,30 @@ final class _DriftPoolStreamQueries extends StreamQueryStore {
 
   final SqliteConnectionPool _pool;
 
+  /// immich-sync fork: the shortest gap between two invalidations of the same watched statement.
+  ///
+  /// Drift re-runs a watched statement whenever a table it reads is written, and it does that by cancelling the run in
+  /// flight and starting again from the top (`stream_queries.dart`, `QueryStream._onListenOrResume`). The cancellation
+  /// is cooperative — a `CancellationToken` sets a flag, and nothing in it can reach a statement SQLite has already
+  /// begun — so the abandoned run still performs its entire read and only its *result* is discarded.
+  ///
+  /// For a statement that costs a page or two that is free, and it is why nobody has noticed. The timeline's main
+  /// bucket query is not that: it counts every asset in the library by day, which on a large one means walking half a
+  /// million rows and reading well over a hundred megabytes. The launch sync commits several times while that is
+  /// running, and each commit throws the run away and starts another, so the read pool ends up carrying four or five
+  /// overlapping copies of the same scan. Only the last result is ever used; the grid waits behind all of them, and so
+  /// does every other reader — which is how a plain `SELECT COUNT(*)` came back eighteen seconds late in the log this
+  /// came from.
+  ///
+  /// The window collapses a *burst* into two runs: one for the write that opened it, one after it closes for
+  /// everything else. It is deliberately leading-edge, so a lone write — which is what an interaction is — still
+  /// reaches the screen with no delay at all. Only the second and later writes inside a window wait, and a burst is
+  /// what a sync is.
+  ///
+  /// This is a fix for the amplifier, not for the query: 145 MB is unreasonable to spend on a first frame however many
+  /// times it is spent. But it is the half that costs nothing to correct.
+  static const _invalidationWindow = Duration(milliseconds: 500);
+
   @override
   void handleTableUpdates(Set<TableUpdate> updates) {
     if (updates.isEmpty) {
@@ -460,7 +489,11 @@ final class _DriftPoolStreamQueries extends StreamQueryStore {
   Stream<Set<TableUpdate>> updatesForSync(TableUpdateQuery query) {
     return _pool.updatedTables
         .map((tables) => {for (final table in tables) TableUpdate(table)})
-        .where((updates) => updates.any(query.matches));
+        .where((updates) => updates.any(query.matches))
+        // immich-sync fork: after the filter, so the window is per statement and only counts writes that statement
+        // actually cares about. `trailing` is what makes this safe to do at all — the last event of a window is always
+        // delivered when it closes, so an invalidation is deferred and never dropped. See [_invalidationWindow].
+        .throttle(_invalidationWindow, trailing: true);
   }
 }
 

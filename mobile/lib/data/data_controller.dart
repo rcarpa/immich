@@ -7,6 +7,7 @@ import 'package:immich_mobile/data/server/person.dart';
 import 'package:immich_mobile/domain/services/store.service.dart';
 import 'package:immich_mobile/infrastructure/repositories/offline_flags.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/store.repository.dart';
+import 'package:immich_mobile/infrastructure/repositories/timeline_bucket_cache.repository.dart';
 import 'package:immich_mobile/utils/offline_paths.dart';
 import 'package:openapi/api.dart';
 import 'package:sqlite3/common.dart';
@@ -34,6 +35,9 @@ class DataController {
     final drift = Drift.sqlite(db, updatePool);
     // immich-sync fork: its tables, before anything reads them.
     await OfflineFlagsRepository.ensureInitialized(drift);
+    // immich-sync fork: and the timeline's bucket cache, in the same schema and for the same reasons. Never throws —
+    // see `timeline_bucket_cache.repository.dart`; a cache that cannot be created is a cache that misses.
+    await TimelineBucketCache.ensureSchema(drift);
 
     final (logDb, wasRecreated) = await _openLoggerDatabase();
 
