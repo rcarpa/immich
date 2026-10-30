@@ -14,3 +14,6 @@ key.properties
 
 # Fastlane
 fastlane/report.xml
+
+# immich-sync fork: local identity override, like ios/Signing.local.xcconfig.
+Identity.local.properties

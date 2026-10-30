@@ -91,8 +91,9 @@ class _ImmichLogoWithText extends StatelessWidget {
   Widget build(BuildContext context) => AnimatedOpacity(
     opacity: IconTheme.of(context).opacity ?? 1,
     duration: kThemeChangeDuration,
+    // immich-sync fork: the same drawing in both files.
     child: SvgPicture.asset(
-      context.isDarkTheme ? 'assets/immich-logo-inline-dark.svg' : 'assets/immich-logo-inline-light.svg',
+      context.isDarkTheme ? 'assets/mirrich-logo-inline-dark.svg' : 'assets/mirrich-logo-inline-light.svg',
       height: 40,
     ),
   );

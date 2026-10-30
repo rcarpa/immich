@@ -8,7 +8,8 @@ class ImmichLogo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Image(
-      image: const AssetImage('assets/immich-logo.png'),
+      // immich-sync fork
+      image: const AssetImage('assets/mirrich-logo.png'),
       width: size,
       filterQuality: FilterQuality.high,
       isAntiAlias: true,
