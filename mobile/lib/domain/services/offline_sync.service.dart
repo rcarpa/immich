@@ -227,23 +227,30 @@ class OfflineSyncService {
     }
   }
 
-  /// Looks up the sizes of the full-size files a pass queues, for the estimate of what is left. At most one pass's
-  /// worth, each item once, and nothing for a complete mirror. Optional: without it the estimate is rougher.
-  Future<void> _lookUpSizes(List<OfflineMissingFile> queued) async {
-    final ids = {
-      for (final entry in queued)
-        if (entry.file.variant.isFullSize && _index.lacksSizes(entry.assetId)) entry.assetId,
-    };
+  /// Looks up the sizes of every full-size file still to download, for the estimate of what is left. Each item once:
+  /// after the first pass only new selections and items upstream had no size for are asked about. Outside the pass
+  /// lock, since the first lookup reads the whole selection.
+  Future<void> _lookUpSizes() async {
+    if (_lookingUpSizes) {
+      return;
+    }
+    final ids = _index.idsLackingSizes();
     if (ids.isEmpty) {
       return;
     }
+    _lookingUpSizes = true;
     try {
-      _index.applySizes(await _repository.sizesOf(ids.toList()));
+      _index.applySizes(await _repository.sizesOf(ids));
       _remainingAt = null;
+      _emit(_countsOn(_status));
     } catch (error, stackTrace) {
       _log.warning('Could not read the sizes for the download estimate', error, stackTrace);
+    } finally {
+      _lookingUpSizes = false;
     }
   }
+
+  bool _lookingUpSizes = false;
 
   /// The estimate of what is left, recomputed at most every couple of seconds: it walks every wanted item, and files
   /// land many times a second. Shown to two digits, so nobody sees it lag.
@@ -669,7 +676,7 @@ class OfflineSyncService {
         // Stopped: what this pass claimed is owed to the next one.
         _changes.fail(start);
       }
-      await _lookUpSizes(found);
+      unawaited(_lookUpSizes());
 
       final stopped = _queue.stoppedBecause;
       _log.info(

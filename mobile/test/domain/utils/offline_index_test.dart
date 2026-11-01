@@ -462,6 +462,25 @@ void main() {
       expect(remaining().bytes, 3 * mb);
     });
 
+    test('sizes are asked for every item with a full-size file still to download, and only once', () {
+      index.load([
+        photoMissingOriginal(photo),
+        photoMissingOriginal('in-camera-roll', localCopy: true),
+        row('previews-only', quality: OfflineQuality.preview, isImage: true),
+        row(
+          'stored',
+          quality: OfflineQuality.full,
+          isImage: true,
+          held: thumbnailAndPreview | OfflineVariant.original.bit,
+        ),
+        row(video, quality: OfflineQuality.fullWithVideos, isImage: false),
+      ], heldBytes: 0);
+      expect(index.idsLackingSizes(), unorderedEquals([photo, video]));
+
+      index.applySizes({photo: size(3 * mb), video: size(100 * mb)});
+      expect(index.idsLackingSizes(), isEmpty);
+    });
+
     test('thumbnails and previews count at the defaults until enough arrive, then at their average', () {
       index.load([row(photo, quality: OfflineQuality.preview, isImage: true)], heldBytes: 0);
       expect(remaining(), (bytes: 16 * kb + 170 * kb, exact: false));
