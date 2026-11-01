@@ -207,11 +207,11 @@ terminated, and hands it up to ten full-size files. Those finish at the system's
 is closed are put in place natively and claimed by the next pass.
 
 **What is left** is shown beside the storage used: "estimated 4.2 GiB left", or without "estimated" once every
-remaining byte is a size the server reported. It costs no query of its own over the library: each pass looks up the
-EXIF sizes of the full-size files it queues (at most one pass's worth, each item once), originals not queued yet count
-at the average of the known ones, and thumbnails, previews and the playback transcodes' shrink are learned from files as
-they arrive. So it is exact once what is left fits in one pass, unless thumbnails, previews, edits or playback videos are
-among it.
+remaining byte is a size the server reported. After a pass, the EXIF sizes of every full-size file still to download
+are looked up once, outside the pass lock, and each file that lands comes off the total. Newer photos are larger, so an
+average of a few would be far off. Only what the server has no size for is averaged: thumbnails, previews, and the
+playback transcodes' shrink, all learned from files as they arrive, plus an original with no EXIF size. Edits count at
+the unedited size.
 
 The order: errands, then the most recent decision, then within it thumbnails and previews before full-size files, then
 the newest photo. Each lane keeps that order but takes its own next file, so a busy one never leaves the other idle.
