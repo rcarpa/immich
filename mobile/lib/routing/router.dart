@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:auto_route/auto_route.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
@@ -56,6 +57,8 @@ import 'package:immich_mobile/presentation/pages/locked_folder.page.dart';
 import 'package:immich_mobile/presentation/pages/map.page.dart';
 import 'package:immich_mobile/presentation/pages/memory.page.dart';
 import 'package:immich_mobile/presentation/pages/memory_list.page.dart';
+import 'package:immich_mobile/presentation/pages/offline_albums.page.dart';
+import 'package:immich_mobile/presentation/pages/offline_sync.page.dart';
 import 'package:immich_mobile/presentation/pages/partner_detail.page.dart';
 import 'package:immich_mobile/presentation/pages/people_collection.page.dart';
 import 'package:immich_mobile/presentation/pages/person.page.dart';
@@ -72,11 +75,11 @@ import 'package:immich_mobile/presentation/pages/user_selection.page.dart';
 import 'package:immich_mobile/presentation/pages/video.page.dart';
 import 'package:immich_mobile/presentation/widgets/asset_viewer/asset_viewer.page.dart';
 import 'package:immich_mobile/providers/api.provider.dart';
+import 'package:immich_mobile/providers/session_state.provider.dart';
 import 'package:immich_mobile/routing/auth_guard.dart';
 import 'package:immich_mobile/routing/duplicate_guard.dart';
 import 'package:immich_mobile/routing/locked_guard.dart';
 import 'package:immich_mobile/services/api.service.dart';
-import 'package:immich_mobile/services/auth.service.dart';
 import 'package:immich_mobile/services/local_auth.service.dart';
 import 'package:immich_mobile/services/secure_storage.service.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
@@ -87,9 +90,14 @@ final appRouterProvider = Provider(
   // ignore: dispose-provided-instances
   (ref) => AppRouter(
     ref.watch(apiServiceProvider),
-    ref.watch(authServiceProvider),
     ref.watch(secureStorageServiceProvider),
     ref.watch(localAuthServiceProvider),
+    // immich-sync fork (R2)
+    onSessionIssue: ({required rejected}) {
+      final notifier = ref.read(sessionIssueProvider.notifier);
+      unawaited(rejected ? notifier.reportRejected() : notifier.reportUnreachable());
+    },
+    onSessionValid: () => ref.read(sessionIssueProvider.notifier).clear(),
   ),
 );
 
@@ -101,11 +109,13 @@ class AppRouter extends RootStackRouter {
 
   AppRouter(
     ApiService apiService,
-    AuthService authService,
+    // immich-sync fork: no AuthService, which only the auth guard took (R2).
     SecureStorageService secureStorageService,
-    LocalAuthService localAuthService,
-  ) {
-    _authGuard = AuthGuard(apiService, authService);
+    LocalAuthService localAuthService, {
+    void Function({required bool rejected})? onSessionIssue,
+    void Function()? onSessionValid,
+  }) {
+    _authGuard = AuthGuard(apiService, onSessionIssue: onSessionIssue, onSessionValid: onSessionValid);
     _duplicateGuard = const DuplicateGuard();
     _lockedGuard = LockedGuard(apiService, secureStorageService, localAuthService);
   }
@@ -117,6 +127,9 @@ class AppRouter extends RootStackRouter {
   late final List<AutoRoute> routes = [
     AutoRoute(page: SplashScreenRoute.page, initial: true),
     AutoRoute(page: LoginRoute.page),
+    // immich-sync fork
+    AutoRoute(page: OfflineSyncRoute.page, guards: [_authGuard]),
+    AutoRoute(page: OfflineAlbumsRoute.page, guards: [_authGuard]),
     AutoRoute(page: ChangePasswordRoute.page),
     AutoRoute(
       page: TabShellRoute.page,

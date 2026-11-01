@@ -5,7 +5,9 @@ import 'package:immich_mobile/data/db/main/database.dart';
 import 'package:immich_mobile/data/server/activity.dart';
 import 'package:immich_mobile/data/server/person.dart';
 import 'package:immich_mobile/domain/services/store.service.dart';
+import 'package:immich_mobile/infrastructure/repositories/offline_flags.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/store.repository.dart';
+import 'package:immich_mobile/utils/offline_paths.dart';
 import 'package:openapi/api.dart';
 import 'package:sqlite3/common.dart';
 
@@ -20,11 +22,27 @@ class DataController {
   /// Initalize the base data system. Sets up primary/logging DBs and the settings store
   ///
   /// `disableStoreWatching` prevents continually updating the setting store's cache on change
-  static Future<(DataController, bool)> init({required ApiClient apiClient, bool disableStoreWatching = false}) async {
+  ///
+  /// `ownsOfflineFile` (immich-sync fork): only the main isolate, before it opens any connection, may set aside an
+  /// unreadable offline database. Worker isolates run beside its open connections, so moving the file would split them.
+  static Future<(DataController, bool)> init({
+    required ApiClient apiClient,
+    bool disableStoreWatching = false,
+    bool ownsOfflineFile = false,
+  }) async {
     await configureSqliteCache();
 
-    final (db, updatePool) = await openSqliteConnectionWithUpdatePool(name: 'immich');
+    // immich-sync fork: attach the offline mirror's database (see `offline_paths.dart`), set aside first if unreadable.
+    final offlinePath = await offlineDatabasePath();
+    if (ownsOfflineFile) {
+      await OfflineFlagsRepository.prepareFile(offlinePath);
+    }
+    final (db, updatePool) = await openSqliteConnectionWithUpdatePool(
+      name: 'immich',
+      attachments: [(schema: kOfflineSchema, path: offlinePath)],
+    );
     final drift = Drift.sqlite(db, updatePool);
+    await OfflineFlagsRepository.ensureInitialized(drift, path: offlinePath);
 
     final (logDb, wasRecreated) = await _openLoggerDatabase();
 

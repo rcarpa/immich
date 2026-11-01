@@ -36,6 +36,14 @@ enum SettingsKey<T> {
   albumIsReverse<bool>(),
   albumIsGrid<bool>(),
 
+  // immich-sync fork: the offline selection, as JSON (see `offline_policy.model.dart`).
+  offlinePolicy<String?>(),
+  offlineWifiOnly<bool>(),
+  // The offline store's limit in bytes; zero means no limit.
+  offlineStorageLimit<int>(),
+  // Offline downloading paused by the user.
+  offlinePaused<bool>(),
+
   // Backup
   backupEnabled<bool>(),
   backupUseCellularForVideos<bool>(),

@@ -29,6 +29,7 @@ import 'package:immich_mobile/domain/models/memory.model.dart';
 import 'package:immich_mobile/domain/models/user.model.dart';
 import 'package:immich_mobile/domain/models/user_metadata.model.dart';
 import 'package:immich_mobile/extensions/string_extensions.dart';
+import 'package:immich_mobile/infrastructure/repositories/offline_flags.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/sync_stream.repository.drift.dart';
 import 'package:immich_mobile/infrastructure/utils/exif.converter.dart';
 import 'package:immich_mobile/utils/datetime_helpers.dart';
@@ -47,6 +48,8 @@ class SyncStreamRepository extends DatabaseAccessor<Drift> with $SyncStreamRepos
   Future<void> reset() async {
     _logger.fine("SyncResetV1 received. Resetting remote entities");
     try {
+      // immich-sync fork: the offline mirror trusts no missing asset or album until a sync has refilled these tables.
+      await OfflineFlagsRepository.noteUpstreamReset(_db);
       await _db.exclusively(() async {
         // foreign_keys PRAGMA is no-op within transactions
         // https://www.sqlite.org/pragma.html#pragma_foreign_keys

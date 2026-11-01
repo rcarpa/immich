@@ -17,6 +17,7 @@ import 'package:immich_mobile/providers/background_sync.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/album.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/asset.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/db.provider.dart';
+import 'package:immich_mobile/providers/infrastructure/offline.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/storage.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/trash_sync.provider.dart';
 import 'package:immich_mobile/providers/server_info.provider.dart';
@@ -148,6 +149,13 @@ class _SyncStatusAndActionsState extends ConsumerState<SyncStatusAndActions> {
                   final db = ref.read(driftProvider);
                   final router = ref.read(appRouterProvider);
                   ref.read(websocketProvider.notifier).disconnect();
+                  // immich-sync fork: as on sign-out, cancel what is queued since the token is about to be revoked.
+                  // The stored files and the mirror's own file are kept.
+                  try {
+                    await ref.read(offlineSyncServiceProvider).stopDownloads();
+                  } catch (error, stackTrace) {
+                    Logger('SyncStatusAndActions').warning('Could not stop offline downloads', error, stackTrace);
+                  }
                   try {
                     await ref.read(authProvider.notifier).logout();
                   } catch (error, stackTrace) {

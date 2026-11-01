@@ -2,6 +2,8 @@
 pub use codecs;
 #[cfg(feature = "convert")]
 pub mod convert;
+#[cfg(feature = "offline_name")]
+pub mod offline_name;
 #[cfg(feature = "rotate")]
 pub mod rotate;
 #[cfg(feature = "thumbhash")]

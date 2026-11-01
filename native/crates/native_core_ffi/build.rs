@@ -5,6 +5,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/lib.rs");
     println!("cargo:rerun-if-changed=src/decode.rs");
     println!("cargo:rerun-if-changed=src/thumbhash.rs");
+    // immich-sync fork
+    println!("cargo:rerun-if-changed=src/offline_name.rs");
     println!("cargo:rerun-if-changed=cbindgen.toml");
     let crate_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     cbindgen::generate(&crate_dir)

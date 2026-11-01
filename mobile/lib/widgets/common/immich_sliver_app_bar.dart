@@ -9,6 +9,8 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/models/server_info/server_info.model.dart';
+// immich-sync fork
+import 'package:immich_mobile/presentation/widgets/offline/offline_indicator.widget.dart';
 import 'package:immich_mobile/providers/backup/backup.provider.dart';
 import 'package:immich_mobile/providers/cast.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/readonly_mode.provider.dart';
@@ -25,6 +27,9 @@ import 'package:immich_mobile/widgets/common/user_circle_avatar.dart';
 class ImmichSliverAppBar extends ConsumerWidget {
   final List<Widget>? actions;
   final bool showUploadButton;
+
+  /// immich-sync fork: separate from [showUploadButton], which is hidden on screens where this still applies.
+  final bool showOfflineButton;
   final bool floating;
   final bool pinned;
   final bool snap;
@@ -35,6 +40,7 @@ class ImmichSliverAppBar extends ConsumerWidget {
     super.key,
     this.actions,
     this.showUploadButton = true,
+    this.showOfflineButton = true,
     this.floating = true,
     this.pinned = false,
     this.snap = true,
@@ -74,6 +80,8 @@ class ImmichSliverAppBar extends ConsumerWidget {
                 icon: Icon(isCasting ? Icons.cast_connected_rounded : Icons.cast_rounded),
               ),
             ...?actions,
+            // immich-sync fork
+            if (showOfflineButton) const OfflineIndicator(),
             if (showUploadButton && !isReadonlyModeEnabled) const _BackupIndicator(),
             const _ProfileIndicator(),
             const SizedBox(width: 8),

@@ -73,11 +73,16 @@ class NetworkApiImpl: NetworkApi {
       for serverUrl in serverUrls {
         guard let url = URL(string: serverUrl), let domain = url.host else { continue }
         let isSecure = serverUrl.hasPrefix("https")
-        let values: [AuthCookie: String] = [
+        var values: [AuthCookie: String] = [
           .accessToken: token,
           .isAuthenticated: "true",
-          .authType: "password",
         ]
+        // immich-sync fork: these cookies are re-seeded on every launch (`api.service.dart`), so keep an existing auth
+        // type, such as `oauth`, which the server reads on logout.
+        let existing = URLSessionManager.cookieStorage.cookies ?? []
+        if !existing.contains(where: { $0.name == AuthCookie.authType.name && $0.domain == domain }) {
+          values[.authType] = "password"
+        }
         for (cookie, value) in values {
           var properties: [HTTPCookiePropertyKey: Any] = [
             .name: cookie.name,

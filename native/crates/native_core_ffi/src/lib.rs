@@ -10,6 +10,8 @@ mod bitmap;
 #[cfg(target_os = "android")]
 mod convert;
 mod decode;
+// immich-sync fork
+mod offline_name;
 #[cfg(target_os = "android")]
 mod rotate;
 mod thumbhash;

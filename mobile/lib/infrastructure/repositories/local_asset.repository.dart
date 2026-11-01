@@ -210,7 +210,13 @@ class LocalAssetRepository extends DatabaseAccessor<Drift> with $LocalAssetRepos
     query.where(whereClause);
 
     final rows = await query.get();
-    final assets = rows.map((row) => row.readTable(_db.localAssetEntity).toDto()).toList();
+    // immich-sync fork: the server id, for the offline note on the free-up-space screen.
+    final assets = rows
+        .map(
+          (row) =>
+              row.readTable(_db.localAssetEntity).toDto().copyWith(remoteId: row.readTable(_db.remoteAssetEntity).id),
+        )
+        .toList();
     final totalBytes = rows.fold<int>(0, (sum, row) {
       final fileSize = row.readTableOrNull(_db.remoteExifEntity)?.fileSize;
       return sum + (fileSize ?? 0);

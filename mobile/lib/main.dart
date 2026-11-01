@@ -62,7 +62,7 @@ void main() async {
     ImmichWidgetsBinding();
     unawaited(BackgroundWorkerLockService(BackgroundWorkerLockApi()).lock());
     await EasyLocalization.ensureInitialized();
-    final (dataController, apiService) = await Bootstrap.initDomain();
+    final (dataController, apiService) = await Bootstrap.initDomain(ownsOfflineFile: true);
     await initApp();
     // Warm-up isolate pool for worker manager
     await workerManagerPatch.init(dynamicSpawning: true, isolatesCount: max(Platform.numberOfProcessors - 1, 5));
