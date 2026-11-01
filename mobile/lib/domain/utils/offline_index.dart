@@ -22,8 +22,8 @@ class _Entry {
 
   OfflineQuality quality;
 
-  /// The original's size from upstream's EXIF, and a Live Photo's motion part's; 0 until the item's full-size files
-  /// are queued ([OfflineIndex.lacksSizes]), or when upstream does not know.
+  /// The original's size from upstream's EXIF, and a Live Photo's motion part's; 0 until looked up
+  /// ([OfflineIndex.idsLackingSizes]), or when upstream does not know.
   int originalBytes = 0;
   int motionBytes = 0;
 
@@ -76,9 +76,18 @@ class OfflineIndex {
   /// Videos that arrived this session with a known original, to learn how much a playback transcode keeps.
   var _videoSample = (files: 0, stored: 0, originals: 0);
 
-  /// Whether an item's full-size sizes are still to be looked up. The pass asks only for the files it queues, so
-  /// nothing walks the library for sizes, and a complete mirror looks nothing up.
+  /// Whether an item's full-size sizes are still to be looked up.
   bool lacksSizes(String assetId) => (_entries[assetId]?.originalBytes ?? 1) == 0;
+
+  /// Items with a full-size file still to download whose sizes are not known yet. Looked up once, so what is left is
+  /// the server's sizes rather than an average; each file that lands then comes off it.
+  List<String> idsLackingSizes() {
+    final fullSize = OfflineVariant.original.bit | OfflineVariant.video.bit;
+    return [
+      for (final MapEntry(key: id, value: entry) in _entries.entries)
+        if (entry.originalBytes == 0 && _fetched(entry) & ~entry.held & fullSize != 0) id,
+    ];
+  }
 
   /// Records what upstream knows about these items' full-size files.
   void applySizes(Map<String, OfflineSizes> sizes) {
@@ -132,7 +141,7 @@ class OfflineIndex {
   ({bool originalVideos, OfflineRemaining value})? _remaining;
 
   /// The bytes still to download for what is wanted. Exact where upstream's size is known: an unedited original, or a
-  /// video kept as its original ([originalVideos]), once the pass has queued it. Averaged where it is not: thumbnails and
+  /// video kept as its original ([originalVideos]). Averaged where it is not: thumbnails and
   /// previews by what arrived, full-size files not yet queued by the known ones, playback videos by how much smaller
   /// the arrived ones came out than their originals. [OfflineRemaining.exact] when every byte is of the first kind,
   /// which is the case once what is left fits in one pass.
