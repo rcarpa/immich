@@ -8,9 +8,11 @@ license.workspace = true
 convert = []
 rotate = []
 thumbhash = []
+# immich-sync fork: the offline mirror's file names.
+offline_name = []
 jxl = ["codecs/jxl"]
 # One group per target.
-flutter = ["convert", "rotate", "thumbhash", "jxl"]
+flutter = ["convert", "rotate", "thumbhash", "jxl", "offline_name"]
 
 [dependencies]
 codecs = { path = "../codecs", default-features = false, optional = true }

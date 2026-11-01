@@ -12,13 +12,16 @@ import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/extensions/platform_extensions.dart';
 import 'package:immich_mobile/infrastructure/repositories/storage.repository.dart';
 import 'package:immich_mobile/platform/native_sync_api.g.dart';
+import 'package:immich_mobile/providers/infrastructure/offline.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/platform.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/storage.provider.dart';
 import 'package:immich_mobile/services/api.service.dart';
 import 'package:immich_mobile/utils/image_url_builder.dart';
+import 'package:immich_mobile/utils/offline_paths.dart';
 import 'package:logging/logging.dart';
 import 'package:openapi/api.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -27,15 +30,22 @@ import 'package:share_plus/share_plus.dart';
 typedef _ShareFile = ({File file, FileSystemEntity? tempEntity, String displayName});
 
 final assetMediaRepositoryProvider = Provider(
-  (ref) => AssetMediaRepository(ref.watch(nativeSyncApiProvider), ref.watch(storageRepositoryProvider)),
+  (ref) => AssetMediaRepository(
+    ref.watch(nativeSyncApiProvider),
+    ref.watch(storageRepositoryProvider),
+    storedUrlOf: ref.watch(offlineStoredUrlProvider),
+  ),
 );
 
 class AssetMediaRepository {
   final NativeSyncApi _nativeSyncApi;
   final StorageRepository _storageRepository;
+
+  /// immich-sync fork: the URL an asset's stored copy is named by, so sharing works offline.
+  final OfflineStoredUrlOf? _storedUrlOf;
   static final Logger _log = Logger("AssetMediaRepository");
 
-  const AssetMediaRepository(this._nativeSyncApi, this._storageRepository);
+  const AssetMediaRepository(this._nativeSyncApi, this._storageRepository, {this._storedUrlOf});
 
   Future<bool> _androidSupportsTrash() async {
     if (Platform.isAndroid) {
@@ -157,7 +167,24 @@ class AssetMediaRepository {
     required String displayName,
     Completer<void>? cancelCompleter,
     required void Function(double progress) onProgress,
+    String? storedUrl,
   }) async {
+    // immich-sync fork: share the stored copy when there is one, so sharing works offline. Looked up under the
+    // URL the store uses, and copied, so the store's own file is never handed out.
+    final stored = storedUrl == null ? null : await offlineBlobPath(storedUrl);
+    if (stored != null) {
+      final directory = Directory(p.join((await getTemporaryDirectory()).path, taskId));
+      try {
+        await directory.create(recursive: true);
+        final copy = await File(stored).copy(p.join(directory.path, displayName));
+        onProgress(1);
+        return (file: copy, tempEntity: directory, displayName: displayName);
+      } catch (error, stack) {
+        await cleanupTempFiles([directory]);
+        _log.warning('Could not share the stored copy of $displayName; falling back to download', error, stack);
+      }
+    }
+
     final task = DownloadTask(
       taskId: taskId,
       url: url,
@@ -201,10 +228,11 @@ class AssetMediaRepository {
     required String displayName,
     Completer<void>? cancelCompleter,
     required void Function(double progress) onProgress,
-  }) {
+  }) async {
     return _downloadRemoteShareFile(
       taskId: 'share-original-$remoteId-${DateTime.now().microsecondsSinceEpoch}',
       url: getOriginalUrlForRemoteId(remoteId, edited: asset.isEdited),
+      storedUrl: await _storedUrlOf?.call(asset, remoteId, preview: false),
       displayName: displayName,
       cancelCompleter: cancelCompleter,
       onProgress: onProgress,
@@ -217,10 +245,11 @@ class AssetMediaRepository {
     required String displayName,
     Completer<void>? cancelCompleter,
     required void Function(double progress) onProgress,
-  }) {
+  }) async {
     return _downloadRemoteShareFile(
       taskId: 'share-preview-$remoteId-${DateTime.now().microsecondsSinceEpoch}',
       url: getThumbnailUrlForRemoteId(remoteId, type: AssetMediaSize.preview, edited: asset.isEdited),
+      storedUrl: await _storedUrlOf?.call(asset, remoteId, preview: true),
       displayName: displayName,
       cancelCompleter: cancelCompleter,
       onProgress: onProgress,

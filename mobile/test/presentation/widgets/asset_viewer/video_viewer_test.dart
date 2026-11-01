@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/presentation/widgets/asset_viewer/video_viewer.widget.dart';
@@ -21,6 +22,11 @@ void main() {
   final remote = RemoteAssetFactory.create(type: .video, localId: local.id);
 
   setUp(() async {
+    // immich-sync fork: the offline store's root points nowhere, so every lookup misses.
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/path_provider'),
+      (_) async => '/nonexistent',
+    );
     context = await PresentationContext.create();
     storage = MockStorageRepository();
     final assets = context.service.asset.service;

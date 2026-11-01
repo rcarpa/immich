@@ -20,6 +20,7 @@ import 'package:immich_mobile/providers/auth.provider.dart';
 import 'package:immich_mobile/providers/background_sync.provider.dart';
 import 'package:immich_mobile/providers/backup/backup.provider.dart';
 import 'package:immich_mobile/providers/server_info.provider.dart';
+import 'package:immich_mobile/providers/session_state.provider.dart';
 import 'package:immich_mobile/providers/view_intent/view_intent_handler.provider.dart';
 import 'package:immich_mobile/providers/websocket.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
@@ -318,14 +319,20 @@ class SplashScreenPageState extends ConsumerState<SplashScreenPage> {
       final backupNotifier = ref.read(backupProvider.notifier);
       final lifeCycle = ref.read(appStateProvider.notifier);
       final viewIntentHandler = ref.read(viewIntentHandlerProvider);
+      // immich-sync fork: read before the route changes, like the rest.
+      final sessionIssue = ref.read(sessionIssueProvider.notifier);
 
       unawaited(
         ref
             .read(authProvider.notifier)
-            .saveAuthInfo(accessToken: accessToken)
+            .resumeAuthInfo(accessToken: accessToken)
             .then(
-              (_) async {
+              (saved) async {
                 try {
+                  // immich-sync fork (R2): upstream ignores this answer.
+                  if (saved == SavedAuth.rejected) {
+                    unawaited(sessionIssue.reportRejected());
+                  }
                   wsProvider.connect();
                   unawaited(infoProvider.getServerInfo());
 
@@ -356,14 +363,11 @@ class SplashScreenPageState extends ConsumerState<SplashScreenPage> {
                   log.severe('Failed establishing connection to the server: $e');
                 }
               },
-              onError: (exception) {
-                log.severe('Failed to update auth info', exception);
-                if (!mounted) {
-                  return;
-                }
-
-                unawaited(ref.read(authProvider.notifier).logout());
-                unawaited(context.router.replaceAll([const LoginRoute()]));
+              onError: (exception, stackTrace) {
+                // immich-sync fork (R2): reported, not a logout, which would wipe the synced library. Server answers
+                // are handled inside resumeAuthInfo, so this is a local failure and says nothing about the token.
+                log.severe('Failed to update auth info', exception, stackTrace);
+                sessionIssue.reportFailed();
               },
             ),
       );

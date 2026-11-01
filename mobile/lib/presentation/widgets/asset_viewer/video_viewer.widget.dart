@@ -4,8 +4,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
-import 'package:immich_mobile/domain/models/store.model.dart';
-import 'package:immich_mobile/entities/store.entity.dart';
 import 'package:immich_mobile/extensions/platform_extensions.dart';
 import 'package:immich_mobile/providers/asset_viewer/asset_viewer.provider.dart';
 import 'package:immich_mobile/providers/asset_viewer/is_motion_video_playing.provider.dart';
@@ -15,6 +13,7 @@ import 'package:immich_mobile/providers/infrastructure/asset.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/settings.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/storage.provider.dart';
 import 'package:immich_mobile/services/api.service.dart';
+import 'package:immich_mobile/utils/offline_paths.dart';
 import 'package:logging/logging.dart';
 import 'package:native_video_player/native_video_player.dart';
 
@@ -156,15 +155,26 @@ class NativeVideoViewerState extends ConsumerState<NativeVideoViewer> with Widge
 
       final remoteAsset = videoAsset as RemoteAsset;
 
-      final serverEndpoint = Store.get(StoreKey.serverEndpoint);
       if (!context.mounted) {
         return null;
       }
 
-      final isOriginalVideo = ref.read(appConfigProvider).viewer.loadOriginalVideo;
-      final String postfixUrl = isOriginalVideo ? 'original' : 'video/playback';
       final String assetId = remoteAsset.livePhotoVideoId ?? remoteAsset.id;
-      final String videoUrl = '$serverEndpoint/assets/$assetId/$postfixUrl';
+      // immich-sync fork: the same URL the offline store uses.
+      final String videoUrl = offlineVideoUrl(assetId);
+
+      // immich-sync fork: play from the offline store when it has the file.
+      final storedPath = await offlineBlobPath(videoUrl);
+      // Checked after every await here, or the player outlives the viewer.
+      if (!mounted) {
+        return null;
+      }
+      if (storedPath != null) {
+        return await VideoSource.init(
+          path: CurrentPlatform.isAndroid ? Uri.file(storedPath).toString() : storedPath,
+          type: VideoSourceType.file,
+        );
+      }
 
       return await VideoSource.init(
         path: videoUrl,

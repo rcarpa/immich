@@ -7,16 +7,19 @@ import 'package:immich_mobile/domain/services/store.service.dart';
 import 'package:immich_mobile/entities/store.entity.dart';
 import 'package:immich_mobile/routing/router.dart';
 import 'package:immich_mobile/services/api.service.dart';
-import 'package:immich_mobile/services/auth.service.dart';
 import 'package:logging/logging.dart';
 import 'package:openapi/api.dart';
 
 class AuthGuard extends AutoRouteGuard {
   final ApiService _apiService;
-  final AuthService _authService;
+  // immich-sync fork: how session problems are reported instead of forcing a login.
+  final void Function({required bool rejected})? onSessionIssue;
+  final void Function()? onSessionValid;
   final _log = Logger("AuthGuard");
   bool _validateInFlight = false;
-  AuthGuard(this._apiService, this._authService);
+  // immich-sync fork: no AuthService, since local data is no longer cleared here (R2).
+  AuthGuard(this._apiService, {this.onSessionIssue, this.onSessionValid});
+
   @override
   void onNavigation(NavigationResolver resolver, StackRouter router) {
     // Synchronously check for the access token. auto_route awaits async
@@ -33,10 +36,10 @@ class AuthGuard extends AutoRouteGuard {
     }
 
     resolver.next(true);
-    unawaited(_validateAccessTokenInBackground(router));
+    unawaited(_validateAccessTokenInBackground());
   }
 
-  Future<void> _validateAccessTokenInBackground(StackRouter router) async {
+  Future<void> _validateAccessTokenInBackground() async {
     if (_validateInFlight) {
       return;
     }
@@ -53,24 +56,34 @@ class AuthGuard extends AutoRouteGuard {
         if (Store.tryGet(StoreKey.accessToken) != token) {
           return;
         }
-        _log.fine('User token is invalid. Redirecting to login');
-        await router.replaceAll([const LoginRoute()]);
-        await _authService.clearLocalData();
+        _log.fine('User token is invalid.');
+        _handleInvalidSession();
+        return;
       }
+      onSessionValid?.call();
     } on ApiException catch (e) {
       if (e.code != HttpStatus.unauthorized) {
+        // immich-sync fork: transport failures come wrapped as ApiException(400) with an inner exception.
+        if (e.innerException != null) {
+          onSessionIssue?.call(rejected: false);
+        }
         return;
       }
       if (Store.tryGet(StoreKey.accessToken) != token) {
         return;
       }
       _log.warning("Unauthorized access token.");
-      await router.replaceAll([const LoginRoute()]);
-      await _authService.clearLocalData();
+      _handleInvalidSession();
     } catch (e) {
+      // immich-sync fork
       _log.warning('Error validating access token from server: $e');
+      onSessionIssue?.call(rejected: false);
     } finally {
       _validateInFlight = false;
     }
   }
+
+  /// immich-sync fork (R2): report a rejected token instead of opening the login screen and clearing the synced
+  /// database, which would take the offline library with it.
+  void _handleInvalidSession() => onSessionIssue?.call(rejected: true);
 }

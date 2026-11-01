@@ -46,9 +46,10 @@ class URLSessionManager: NSObject {
     try! FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     return dir
   }()
+  /// immich-sync fork: smaller, since image bytes are kept by OfflineStore.
   private static let urlCache = URLCache(
-    memoryCapacity: 0,
-    diskCapacity: 1024 * 1024 * 1024,
+    memoryCapacity: 8 * 1024 * 1024,
+    diskCapacity: 64 * 1024 * 1024,
     directory: cacheDir
   )
   static let userAgent: String = {

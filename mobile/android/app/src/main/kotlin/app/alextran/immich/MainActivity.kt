@@ -17,6 +17,8 @@ import me.albemala.native_video_player.NativeVideoPlayerPlugin
 import app.alextran.immich.images.LocalImageApi
 import app.alextran.immich.images.LocalImagesImpl
 import app.alextran.immich.images.RemoteImageApi
+import app.alextran.immich.images.OfflineStore
+import app.alextran.immich.images.OfflineStoreChannel
 import app.alextran.immich.images.RemoteImagesImpl
 import app.alextran.immich.permission.PermissionApi
 import app.alextran.immich.permission.PermissionApiImpl
@@ -31,6 +33,8 @@ class MainActivity : FlutterFragmentActivity() {
   override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
     super.configureFlutterEngine(flutterEngine)
     registerPlugins(this, flutterEngine)
+    // immich-sync fork: only this engine's Dart side may receive the offline store's reports.
+    OfflineStoreChannel.registerAppEngine(flutterEngine.dartExecutor.binaryMessenger)
   }
 
   override fun onNewIntent(intent: Intent) {
@@ -58,6 +62,9 @@ class MainActivity : FlutterFragmentActivity() {
       PermissionApi.setUp(messenger, permissionApiImpl)
       LocalImageApi.setUp(messenger, LocalImagesImpl(ctx))
       RemoteImageApi.setUp(messenger, RemoteImagesImpl(ctx))
+      // immich-sync fork: the offline store and its channel.
+      OfflineStore.prepare(ctx)
+      OfflineStoreChannel.register(ctx, messenger)
 
       BackgroundWorkerFgHostApi.setUp(messenger, BackgroundWorkerApiImpl(ctx))
       ConnectivityApi.setUp(messenger, ConnectivityApiImpl(ctx))

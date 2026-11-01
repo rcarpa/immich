@@ -44,17 +44,58 @@ class RemoteImageApiImpl: NSObject, RemoteImageApi {
   ]
 
   func requestImage(url: String, requestId: Int64, preferEncoded: Bool, width: Int64?, height: Int64?, completion: @escaping (Result<[String : Int64]?, any Error>) -> Void) {
-    var urlRequest = URLRequest(url: URL(string: url)!)
-    urlRequest.cachePolicy = .returnCacheDataElseLoad
-
     let request = RemoteImageRequest(id: requestId, completion: completion)
+    Self.registry.add(requestId: requestId, request: request)
+
+    // immich-sync fork: serve from the offline store when it has the file. Only an in-memory lookup on the main
+    // thread; the read runs on the store's queue.
+    let name = OfflineStore.fileName(for: url)
+    if let name, OfflineStore.mightHold(name) {
+      OfflineStore.io.async {
+        if request.isCancelled {
+          return request.completion(ImageProcessing.cancelledResult)
+        }
+        guard let stored = OfflineStore.data(name: name) else {
+          return Self.fetch(url: url, name: name, request: request, encoded: preferEncoded, width: width, height: height)
+        }
+        ImageProcessing.queue.addOperation {
+          if request.isCancelled {
+            return request.completion(ImageProcessing.cancelledResult)
+          }
+          Self.handleCompletion(request: request, encoded: preferEncoded, width: width, height: height, data: stored, response: nil, error: nil)
+        }
+      }
+      return
+    }
+
+    Self.fetch(url: url, name: name, request: request, encoded: preferEncoded, width: width, height: height)
+  }
+
+  /// immich-sync fork: the network path. What comes back is kept in the offline store.
+  private static func fetch(url: String, name: String?, request: RemoteImageRequest, encoded: Bool, width: Int64?, height: Int64?) {
+    guard let parsed = URL(string: url) else {
+      registry.remove(requestId: request.id)
+      return request.completion(.failure(PigeonError(code: "", message: "Invalid image URL", details: nil)))
+    }
+
+    var urlRequest = URLRequest(url: parsed)
+    // immich-sync fork: the store keeps image bytes, so URLCache does not.
+    urlRequest.cachePolicy = name == nil ? .returnCacheDataElseLoad : .reloadIgnoringLocalCacheData
 
     let task = URLSessionManager.shared.session.dataTask(with: urlRequest) { data, response, error in
-      Self.handleCompletion(request: request, encoded: preferEncoded, width: width, height: height, data: data, response: response, error: error)
+      if let name, let data, error == nil, (response as? HTTPURLResponse)?.statusCode == 200,
+        OfflineStore.keepsType(response?.mimeType)
+      {
+        OfflineStore.store(data, name: name)
+      }
+      handleCompletion(request: request, encoded: encoded, width: width, height: height, data: data, response: response, error: error)
     }
 
     request.task = task
-    Self.registry.add(requestId: requestId, request: request)
+    // Resume even if cancelled meanwhile: that still delivers the completion, which answers the request once.
+    if request.isCancelled {
+      task.cancel()
+    }
     task.resume()
   }
 
@@ -74,7 +115,8 @@ class RemoteImageApiImpl: NSObject, RemoteImageApi {
     }
 
     // Flutter can't decode JPEG XL and older iOS versions can't either, so this applies to encoded requests too.
-    if response?.mimeType == "image/jxl" {
+    // immich-sync fork: a stored file has no response, so JPEG XL is told by its signature.
+    if response?.mimeType == "image/jxl" || (response == nil && OfflineStore.isJxl(data)) {
       ImageProcessing.queue.addOperation {
         if request.isCancelled {
           return request.completion(ImageProcessing.cancelledResult)

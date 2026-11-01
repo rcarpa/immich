@@ -49,7 +49,9 @@ class ApiService {
   final _log = Logger("ApiService");
 
   Future<void> updateHeaders() async {
-    await NetworkRepository.setHeaders(getRequestHeaders(), getServerUrls());
+    // immich-sync fork: re-seed the auth cookie from the stored token on every launch. A sideloaded build whose App
+    // Group changed loses the cookie jar.
+    await NetworkRepository.setHeaders(getRequestHeaders(), getServerUrls(), token: Store.tryGet(StoreKey.accessToken));
     _apiClient.client = NetworkRepository.client;
   }
 

@@ -33,6 +33,17 @@ final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   );
 });
 
+/// immich-sync fork (R2): how resuming a session went. Only [rejected] says anything about the token.
+enum SavedAuth {
+  signedIn,
+
+  /// The server refused the token.
+  rejected,
+
+  /// No user from the server, which was not reached, and none cached.
+  noUser,
+}
+
 class AuthNotifier extends StateNotifier<AuthState> {
   final AuthService _authService;
   final ApiService _apiService;
@@ -124,7 +135,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  Future<bool> saveAuthInfo({required String accessToken}) async {
+  Future<bool> saveAuthInfo({required String accessToken}) async =>
+      await _saveAuthInfo(accessToken: accessToken, keepCachedUser: false) == SavedAuth.signedIn;
+
+  /// immich-sync fork (R2): resumes a stored session. A rejected token still signs in the cached user, so the library
+  /// stays usable while the caller reports the rejection.
+  Future<SavedAuth> resumeAuthInfo({required String accessToken}) =>
+      _saveAuthInfo(accessToken: accessToken, keepCachedUser: true);
+
+  Future<SavedAuth> _saveAuthInfo({required String accessToken, required bool keepCachedUser}) async {
     await Store.put(StoreKey.accessToken, accessToken);
     await _apiService.updateHeaders();
 
@@ -137,6 +156,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final String deviceId = Store.tryGet(StoreKey.deviceId) ?? await FlutterUdid.consistentUdid;
 
     UserDto? user = _userService.tryGetMyUser();
+    var rejected = false;
 
     try {
       final serverUser = await _userService.refreshMyUser().timeout(_timeoutDuration);
@@ -151,9 +171,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
     } on ApiException catch (error, stackTrace) {
       if (error.code == 401) {
         _log.severe("Unauthorized access, token likely expired. Logging out.");
-        return false;
+        if (!keepCachedUser) {
+          return SavedAuth.rejected;
+        }
+        rejected = true;
+      } else {
+        _log.severe("Error getting user information from the server [API EXCEPTION]", stackTrace);
       }
-      _log.severe("Error getting user information from the server [API EXCEPTION]", stackTrace);
     } catch (error, stackTrace) {
       _log.severe("Error getting user information from the server [CATCH ALL]", error, stackTrace);
       dPrint(() => "Error getting user information from the server [CATCH ALL] $error $stackTrace");
@@ -162,7 +186,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     // If the user is null, the login was not successful
     // and we don't have a local copy of the user from a prior successful login
     if (user == null) {
-      return false;
+      return rejected ? SavedAuth.rejected : SavedAuth.noUser;
     }
 
     state = state.copyWith(
@@ -174,7 +198,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       isAdmin: user.isAdmin,
     );
 
-    return true;
+    return rejected ? SavedAuth.rejected : SavedAuth.signedIn;
   }
 
   Future<void> saveWifiName(String wifiName) async {

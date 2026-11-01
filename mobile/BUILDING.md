@@ -323,16 +323,15 @@ sdkmanager --licenses
 
 ### 7.5 Checking the store
 
-The file name is derived in Dart, Swift and Kotlin, which must agree or the
-store is never read. The Kotlin side is pinned to the Dart test's literals:
+The file name is derived once, in the Rust core (`native/crates/native_core/src/offline_name.rs`), which Dart, Swift
+and Kotlin call. Its fixture holds the names stored files already have:
 
 ```bash
-cd android && ./gradlew :app:testDebugUnitTest --tests '*OfflineStoreNamingTest*'
+cd ../native && cargo test -p native_core --features offline_name
 ```
 
-Run it after any change to `offline_paths.dart`. The Rust native core needs
-`rustup` with the Android targets; add `-x compileFlutterBuildDebug` to run this
-test without it.
+After changing the core's exported functions, regenerate the header and the Dart bindings with
+`mise run codegen:native` (ffigen needs `CPATH` pointing at clang's headers on Linux).
 
 ## 8. Troubleshooting
 

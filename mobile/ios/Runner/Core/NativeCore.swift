@@ -36,4 +36,37 @@ enum NativeCore {
   static func cancel(_ flag: UnsafeMutablePointer<Bool>) {
     coreCancel?(flag)
   }
+
+  // immich-sync fork: the offline store's file naming (`offline_name.rs`), which Dart and Kotlin call too.
+  private static let coreOfflineName = symbol("native_core_offline_name", as: NativeCoreOfflineNameFn.self)
+  private static let coreOfflineBucket = symbol("native_core_offline_bucket", as: NativeCoreOfflineBucketFn.self)
+  private static let coreFreeString = symbol("native_core_free_string", as: NativeCoreFreeStringFn.self)
+  private static let coreOfflineNameHash = symbol("native_core_offline_name_hash", as: NativeCoreOfflineNameHashFn.self)
+
+  /// Whether the core loaded with the offline naming; without it every lookup misses.
+  static var hasOfflineNaming: Bool {
+    coreOfflineName != nil && coreOfflineBucket != nil && coreFreeString != nil && coreOfflineNameHash != nil
+  }
+
+  /// The offline store's file name for a remote URL, or nil for one it never stores.
+  static func offlineName(_ url: String) -> String? {
+    guard let coreOfflineName, let coreFreeString, let name = url.withCString({ coreOfflineName($0) }) else {
+      return nil
+    }
+    defer { coreFreeString(name) }
+    return String(cString: name)
+  }
+
+  /// A 64-bit hash of a stored name, the same bits Dart and Kotlin index files by; nil without the core.
+  static func offlineNameHash(_ name: String) -> UInt64? {
+    guard let coreOfflineNameHash else { return nil }
+    return name.withCString { coreOfflineNameHash($0) }
+  }
+
+  /// The bucket directory, 0 to 255, a stored name goes in; nil without the core.
+  static func offlineBucket(_ name: String) -> Int? {
+    guard let coreOfflineBucket else { return nil }
+    let bucket = name.withCString { coreOfflineBucket($0) }
+    return bucket < 0 ? nil : Int(bucket)
+  }
 }
