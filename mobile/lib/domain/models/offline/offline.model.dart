@@ -382,7 +382,8 @@ class OfflineStatus {
   /// Files of items upstream will not give us: trashed, locked, or deleted since they were selected.
   final int unavailable;
 
-  /// Files not fetched because the camera roll holds them. Not a failure; shown under Storage.
+  /// Files not fetched because the camera roll holds them. Not a failure; shown under Storage. Already left out of
+  /// [wanted].
   final int onDevice;
 
   final int bytes;
@@ -412,8 +413,8 @@ class OfflineStatus {
   /// Why planned files are not downloading, when they are not; from the queue.
   final String? waitingBecause;
 
-  /// What progress is measured against: what was asked for, less what cannot or need not be fetched.
-  int get fetchable => (wanted - unavailable - onDevice).clamp(0, wanted);
+  /// What progress is measured against: what is fetched, less what cannot be.
+  int get fetchable => (wanted - unavailable).clamp(0, wanted);
 
   int get missing => (fetchable - held).clamp(0, fetchable);
 

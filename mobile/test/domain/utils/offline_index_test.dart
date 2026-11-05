@@ -65,6 +65,55 @@ void main() {
     });
   });
 
+  group('progress counts each item by what it fetches', () {
+    final thumbnail = OfflineVariant.thumbnail.bit;
+    final preview = OfflineVariant.preview.bit;
+    final original = OfflineVariant.original.bit;
+    final motion = OfflineVariant.video.bit;
+
+    test("a spare of one item does not stand in for another's missing file", () {
+      index.load([
+        // A motion part kept from the videos rung, which full quality no longer asks for.
+        row(
+          'live',
+          quality: OfflineQuality.full,
+          isImage: true,
+          hasMotion: true,
+          held: thumbnail | preview | original | motion,
+        ),
+        row(photo, quality: OfflineQuality.full, isImage: true, held: thumbnail | preview),
+      ], heldBytes: 0);
+
+      expect(index.wantedFiles, 6);
+      expect(index.heldFiles, 5);
+    });
+
+    test('what the camera roll holds is not wanted, and a copy of it is not progress', () {
+      index.load([
+        row(photo, quality: OfflineQuality.full, isImage: true, localCopy: true, held: thumbnail | preview | original),
+      ], heldBytes: 0);
+
+      expect(index.wantedFiles, 2);
+      expect(index.heldFiles, 2);
+    });
+
+    test('a camera-roll copy that goes away adds the original back', () {
+      index.load([row(photo, quality: OfflineQuality.full, isImage: true, localCopy: true)], heldBytes: 0);
+      expect(index.wantedFiles, 2);
+
+      index.noteLocalCopy(photo, localCopy: false);
+      expect(index.wantedFiles, 3);
+    });
+
+    test('an errand counts the whole item until it is done', () {
+      index.load([row(photo, quality: OfflineQuality.thumbnail, isImage: true, errand: true)], heldBytes: 0);
+      expect(index.wantedFiles, 3);
+
+      index.noteErrand(photo, errand: false);
+      expect(index.wantedFiles, 1);
+    });
+  });
+
   test('a newer version of a file is counted once its predecessor is let go', () {
     index
       ..load([row(photo, quality: OfflineQuality.preview, isImage: true)], heldBytes: 0)
