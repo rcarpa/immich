@@ -790,11 +790,10 @@ class OfflineSyncService {
           localCopyMoved[want.id] = want.localCopy;
         }
         final isErrand = errands.contains(want.id);
-        // Files skipped because the camera roll holds them, counted apart from `unavailable` so progress can still
-        // finish.
         final wantedFiles = offlineFilesFor(asset, want.quality, errand: isErrand);
-        // Not for an asset the server has not processed yet: its files are coming.
-        final skipped = asset.thumbHash.isEmpty ? 0 : _index.wantedFilesOf(want.id) - wantedFiles.length;
+        // Files skipped because the camera roll holds them, for the storage note; progress already leaves them out. Not
+        // for an asset the server has not processed yet: its files are coming.
+        final skipped = asset.thumbHash.isEmpty ? 0 : _index.rungFilesOf(want.id) - wantedFiles.length;
         if (skipped > 0) {
           onDevice += skipped;
         }

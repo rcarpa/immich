@@ -111,7 +111,8 @@ class OfflineIndex {
 
   void publish() => _live = this;
 
-  /// The status figures, recounted from the entries on demand rather than maintained alongside them.
+  /// The status figures, recounted from the entries on demand rather than maintained alongside them. Counted per item
+  /// over the files it fetches ([_fetched]), so a spare of one item cannot stand in for a missing file of another.
   ({int wantedAssets, int wantedFiles, int heldFiles})? _tally;
 
   ({int wantedAssets, int wantedFiles, int heldFiles}) get _counts {
@@ -127,8 +128,9 @@ class OfflineIndex {
         continue;
       }
       assets++;
-      files += _filesFor(entry.quality, entry.isImage, entry.hasMotion);
-      held += _heldCount(entry.held);
+      final fetched = _fetched(entry);
+      files += _bitCount(fetched);
+      held += _bitCount(entry.held & fetched);
     }
     return _tally = (wantedAssets: assets, wantedFiles: files, heldFiles: held);
   }
@@ -273,15 +275,17 @@ class OfflineIndex {
 
   int get wantedAssets => _counts.wantedAssets;
 
-  /// Files the current selection implies, so progress is exact without anything being listed.
+  /// Files the current selection fetches, less what the camera roll holds, so progress is exact without anything being
+  /// listed.
   int get wantedFiles => _counts.wantedFiles;
 
+  /// Held files among [wantedFiles]; spares are not progress.
   int get heldFiles => _counts.heldFiles;
   int get heldBytes => _storeBytes;
 
-  static int _heldCount(int held) {
+  static int _bitCount(int bits) {
     var count = 0;
-    for (var bits = held; bits != 0; bits &= bits - 1) {
+    for (var rest = bits; rest != 0; rest &= rest - 1) {
       count++;
     }
     return count;
@@ -341,6 +345,7 @@ class OfflineIndex {
     final entry = _entries[assetId];
     if (entry != null) {
       entry.localCopy = localCopy;
+      _restate();
     }
   }
 
@@ -351,6 +356,7 @@ class OfflineIndex {
     final entry = _entries[assetId];
     if (entry != null) {
       entry.errand = errand;
+      _restate();
     }
   }
 
@@ -419,7 +425,14 @@ class OfflineIndex {
     );
   }
 
+  /// The files [assetId] adds to [wantedFiles].
   int wantedFilesOf(String assetId) {
+    final entry = _entries[assetId];
+    return entry == null ? 0 : _bitCount(_fetched(entry));
+  }
+
+  /// The files [assetId]'s rung asks for before the camera roll is taken into account, for counting what it holds.
+  int rungFilesOf(String assetId) {
     final entry = _entries[assetId];
     return entry == null ? 0 : _filesFor(entry.quality, entry.isImage, entry.hasMotion);
   }
