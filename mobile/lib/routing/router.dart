@@ -56,6 +56,8 @@ import 'package:immich_mobile/presentation/pages/locked_folder.page.dart';
 import 'package:immich_mobile/presentation/pages/map.page.dart';
 import 'package:immich_mobile/presentation/pages/memory.page.dart';
 import 'package:immich_mobile/presentation/pages/memory_list.page.dart';
+import 'package:immich_mobile/presentation/pages/offline_albums.page.dart';
+import 'package:immich_mobile/presentation/pages/offline_sync.page.dart';
 import 'package:immich_mobile/presentation/pages/partner_detail.page.dart';
 import 'package:immich_mobile/presentation/pages/people_collection.page.dart';
 import 'package:immich_mobile/presentation/pages/person.page.dart';
@@ -117,6 +119,9 @@ class AppRouter extends RootStackRouter {
   late final List<AutoRoute> routes = [
     AutoRoute(page: SplashScreenRoute.page, initial: true),
     AutoRoute(page: LoginRoute.page),
+    // immich-sync fork
+    AutoRoute(page: OfflineSyncRoute.page, guards: [_authGuard]),
+    AutoRoute(page: OfflineAlbumsRoute.page, guards: [_authGuard]),
     AutoRoute(page: ChangePasswordRoute.page),
     AutoRoute(
       page: TabShellRoute.page,

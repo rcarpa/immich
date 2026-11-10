@@ -2,9 +2,11 @@ import 'package:auto_route/auto_route.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/domain/models/store.model.dart';
+import 'package:immich_mobile/domain/services/offline_sync.service.dart';
 import 'package:immich_mobile/domain/services/store.service.dart';
 import 'package:immich_mobile/providers/auth.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/db.provider.dart';
+import 'package:immich_mobile/providers/infrastructure/offline.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
 import 'package:immich_mobile/widgets/settings/beta_sync_settings/sync_status_and_actions.dart';
 import 'package:mocktail/mocktail.dart';
@@ -14,6 +16,8 @@ import '../../../service.mocks.dart';
 import '../../../unit/presentation/presentation_context.dart';
 
 class MockAppRouter extends Mock implements AppRouter {}
+
+class MockOfflineSyncService extends Mock implements OfflineSyncService {}
 
 class TestAuthNotifier extends AuthNotifier {
   TestAuthNotifier(Ref ref, [this._error])
@@ -65,11 +69,14 @@ void main() {
   group('reset', () {
     late MockDrift drift;
     late MockAppRouter router;
+    late MockOfflineSyncService offlineSync;
     TestAuthNotifier? auth;
 
     Future<void> confirmReset(WidgetTester tester, [Exception? logoutError]) async {
       drift = MockDrift();
       router = MockAppRouter();
+      offlineSync = MockOfflineSyncService();
+      when(offlineSync.stopDownloads).thenAnswer((_) async {});
       when(() => drift.localAlbumRepository).thenReturn(MockLocalAlbumRepository());
       when(() => drift.memoryRepository).thenReturn(MockMemoryRepository());
       when(drift.reset).thenAnswer((_) async {});
@@ -83,6 +90,7 @@ void main() {
         overrides: [
           driftProvider.overrideWithValue(drift),
           appRouterProvider.overrideWithValue(router),
+          offlineSyncServiceProvider.overrideWithValue(offlineSync),
           authProvider.overrideWith((ref) => auth = TestAuthNotifier(ref, logoutError)),
         ],
       );
@@ -96,6 +104,7 @@ void main() {
     }
 
     void expectWipedOnLoginPage() {
+      verify(offlineSync.stopDownloads).called(1);
       verify(drift.reset).called(1);
       expect(StoreService.I.tryGet(StoreKey.serverEndpoint), isNull);
       final routes = verify(() => router.replaceAll(captureAny())).captured.single as List<PageRouteInfo>;
