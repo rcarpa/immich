@@ -244,7 +244,48 @@ private object ImageFetcherManager {
     onSuccess: (NativeByteBuffer, String?) -> Unit,
     onFailure: (Exception) -> Unit,
   ) {
-    fetcher.fetch(url, signal, onSuccess, onFailure)
+    // immich-sync fork: serve from the offline store when it has the file. Only an in-memory lookup here; the read
+    // runs on the store's own pool.
+    val name = OfflineStore.fileName(url)
+    if (name != null && OfflineStore.mightHold(name)) {
+      OfflineStore.read {
+        val stored = OfflineStore.load(name)
+        if (stored != null) {
+          // No content type is kept, so the store tells the types decoding depends on from the bytes.
+          onSuccess(stored, OfflineStore.contentTypeOf(stored))
+        } else {
+          fetcher.fetch(url, signal, keeping(name, onSuccess), onFailure)
+        }
+      }
+      return
+    }
+
+    fetcher.fetch(url, signal, if (name == null) onSuccess else keeping(name, onSuccess), onFailure)
+  }
+
+  /**
+   * immich-sync fork: keeps what was fetched, as a spare, so a photo looked at need not be
+   * downloaded again.
+   */
+  private fun keeping(
+    name: String,
+    onSuccess: (NativeByteBuffer, String?) -> Unit,
+  ): (NativeByteBuffer, String?) -> Unit = { buffer, contentType ->
+    if (buffer.offset > 0 && OfflineStore.keepsType(contentType)) {
+      var copy: NativeByteBuffer? = null
+      try {
+        // Copied, since Flutter owns the buffer once it has it; off the heap, which the store then writes from.
+        val size = buffer.offset
+        copy = NativeByteBuffer(size)
+        NativeBuffer.wrap(copy.pointer, size).put(NativeBuffer.wrap(buffer.pointer, size))
+        copy.advance(size)
+        OfflineStore.store(copy, name)
+      } catch (_: Throwable) {
+        // A blob that could not be kept is one more download later, never a wrong image. The store frees what it took.
+        if (copy != null && copy.offset == 0) copy.free()
+      }
+    }
+    onSuccess(buffer, contentType)
   }
 
   fun clearCache(onCleared: (Result<Long>) -> Unit) {

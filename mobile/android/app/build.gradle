@@ -102,6 +102,9 @@ dependencies {
   ksp libs.glide.ksp
   coreLibraryDesugaring libs.desugar.jdk.libs
 
+  // immich-sync fork: `OfflineHttpTest`.
+  testImplementation 'junit:junit:4.13.2'
+
   //Glance Widget
   implementation libs.glance.appwidget
   implementation libs.gson

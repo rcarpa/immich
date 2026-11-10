@@ -17,6 +17,9 @@ import me.albemala.native_video_player.NativeVideoPlayerPlugin
 import app.alextran.immich.images.LocalImageApi
 import app.alextran.immich.images.LocalImagesImpl
 import app.alextran.immich.images.RemoteImageApi
+import app.alextran.immich.images.OfflineStore
+import app.alextran.immich.images.OfflineStoreApi
+import app.alextran.immich.images.OfflineStoreApiImpl
 import app.alextran.immich.images.RemoteImagesImpl
 import app.alextran.immich.passkey.PasskeyPlugin
 import app.alextran.immich.permission.PermissionApi
@@ -33,6 +36,8 @@ class MainActivity : FlutterFragmentActivity() {
     super.configureFlutterEngine(flutterEngine)
     registerPlugins(this, flutterEngine)
     flutterEngine.plugins.add(PasskeyPlugin())
+    // immich-sync fork: only this engine's Dart side may receive the offline store's reports.
+    OfflineStoreApiImpl.registerAppEngine(flutterEngine.dartExecutor.binaryMessenger)
   }
 
   override fun onNewIntent(intent: Intent) {
@@ -60,6 +65,9 @@ class MainActivity : FlutterFragmentActivity() {
       PermissionApi.setUp(messenger, permissionApiImpl)
       LocalImageApi.setUp(messenger, LocalImagesImpl(ctx))
       RemoteImageApi.setUp(messenger, RemoteImagesImpl(ctx))
+      // immich-sync fork: the offline store and its API.
+      OfflineStore.prepare(ctx)
+      OfflineStoreApi.setUp(messenger, OfflineStoreApiImpl(ctx, messenger))
 
       BackgroundWorkerFgHostApi.setUp(messenger, BackgroundWorkerApiImpl(ctx))
       ConnectivityApi.setUp(messenger, ConnectivityApiImpl(ctx))
