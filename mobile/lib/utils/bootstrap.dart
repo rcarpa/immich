@@ -49,9 +49,12 @@ abstract final class Bootstrap {
   /// Initalize the base data system. Sets up primary/logging DBs, the [ApiService], and the settings store
   ///
   /// `disableStoreWatching` prevents continually updating the setting store's cache on change
+  ///
+  /// `ownsOfflineFile` (immich-sync fork): see [DataController.init]
   static Future<(DataController, ApiService)> initDomain({
     bool shouldBufferLogs = true,
     bool disableStoreWatching = false,
+    bool ownsOfflineFile = false,
   }) async {
     await NetworkRepository.init();
 
@@ -59,6 +62,7 @@ abstract final class Bootstrap {
     final (dataController, loggerDatabaseWasRecreated) = await DataController.init(
       apiClient: apiService.apiClient,
       disableStoreWatching: disableStoreWatching,
+      ownsOfflineFile: ownsOfflineFile,
     );
 
     final settingsRepo = await SettingsRepository.ensureInitialized(dataController.db);

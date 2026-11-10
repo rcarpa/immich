@@ -42,6 +42,7 @@ import 'package:immich_mobile/infrastructure/repositories/local_album.repository
 import 'package:immich_mobile/infrastructure/repositories/local_asset.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/map.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/memory.repository.dart';
+import 'package:immich_mobile/infrastructure/repositories/offline_flags.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/partner.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/remote_album.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/remote_asset.repository.dart';
@@ -126,6 +127,9 @@ class Drift extends $Drift {
   }
 
   Future<void> reset() async {
+    // immich-sync fork: as in `SyncStreamRepository.reset()`, the offline mirror trusts no missing asset or album
+    // until a sync has refilled the tables. The mirror's own file is attached, not wiped.
+    await OfflineFlagsRepository.noteUpstreamReset(this);
     // https://github.com/simolus3/drift/commit/bd80a46264b6dd833ef4fd87fffc03f5a832ab41#diff-3f879e03b4a35779344ef16170b9353608dd9c42385f5402ec6035aac4dd8a04R76-R94
     await exclusively(() async {
       // https://stackoverflow.com/a/65743498/25690041
@@ -483,9 +487,13 @@ Future<SqliteConnection> openSqliteConnection({required String name}) async {
   return _openImmichDatabase(await _databaseFile(name));
 }
 
-Future<(SqliteConnection, SqliteConnectionPool)> openSqliteConnectionWithUpdatePool({required String name}) async {
+Future<(SqliteConnection, SqliteConnectionPool)> openSqliteConnectionWithUpdatePool({
+  required String name,
+  // immich-sync fork
+  List<SqliteAttachment> attachments = const [],
+}) async {
   final file = await _databaseFile(name);
-  final db = _openImmichDatabase(file);
+  final db = _openImmichDatabase(file, attachments);
   await db.initialize();
   final updatePool = SqliteConnectionPool.open(
     name: file.path,
@@ -499,10 +507,11 @@ Future<File> _databaseFile(String name) async {
   return File(p.join(dbFolder.path, '$name.sqlite'));
 }
 
-SqliteDatabase _openImmichDatabase(File file) {
+SqliteDatabase _openImmichDatabase(File file, [List<SqliteAttachment> attachments = const []]) {
   return SqliteDatabase.withFactory(
     ImmichSqliteOpenFactory(
       path: file.path,
+      attachments: attachments,
       sqliteOptions: const SqliteOptions(
         journalMode: SqliteJournalMode.wal, // PRAGMA journal_mode (writer only)
         synchronous: SqliteSynchronous.normal, // PRAGMA synchronous
@@ -512,9 +521,15 @@ SqliteDatabase _openImmichDatabase(File file) {
   );
 }
 
+/// immich-sync fork: a second database file made visible on every connection, so one statement can read both.
+typedef SqliteAttachment = ({String schema, String path});
+
 @visibleForTesting
 final class ImmichSqliteOpenFactory extends NativeSqliteOpenFactory {
-  ImmichSqliteOpenFactory({required super.path, super.sqliteOptions});
+  ImmichSqliteOpenFactory({required super.path, super.sqliteOptions, this.attachments = const []});
+
+  /// immich-sync fork: see [SqliteAttachment].
+  final List<SqliteAttachment> attachments;
 
   @override
   List<String> pragmaStatements(SqliteOpenOptions options) {
@@ -523,6 +538,9 @@ final class ImmichSqliteOpenFactory extends NativeSqliteOpenFactory {
       'PRAGMA cache_size = -32000', // 32MB
       'PRAGMA temp_store = MEMORY',
       'PRAGMA foreign_keys = ON',
+      // immich-sync fork: on every pooled connection, or queries on the other schema fail.
+      for (final attachment in attachments)
+        "ATTACH DATABASE '${attachment.path.replaceAll("'", "''")}' AS ${attachment.schema}",
     ];
   }
 }

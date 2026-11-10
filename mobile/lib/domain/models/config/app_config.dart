@@ -43,6 +43,11 @@ abstract class AppConfig with _$AppConfig {
     @Default(NetworkConfig()) NetworkConfig network,
     @Default(ShareConfig()) ShareConfig share,
     @Default(FeatureMessageConfig()) FeatureMessageConfig featureMessage,
+    // immich-sync fork: see offline_policy.model.dart.
+    String? offlinePolicy,
+    @Default(true) bool offlineWifiOnly,
+    @Default(0) int offlineStorageLimit,
+    @Default(false) bool offlinePaused,
   }) = _AppConfig;
 
   T read<T>(SettingsKey<T> key) =>
@@ -66,6 +71,10 @@ abstract class AppConfig with _$AppConfig {
             .albumSortMode => album.sortMode,
             .albumIsReverse => album.isReverse,
             .albumIsGrid => album.isGrid,
+            .offlinePolicy => offlinePolicy,
+            .offlineWifiOnly => offlineWifiOnly,
+            .offlineStorageLimit => offlineStorageLimit,
+            .offlinePaused => offlinePaused,
             .backupEnabled => backup.enabled,
             .backupUseCellularForVideos => backup.useCellularForVideos,
             .backupUseCellularForPhotos => backup.useCellularForPhotos,
@@ -123,6 +132,10 @@ abstract class AppConfig with _$AppConfig {
       .albumSortMode => copyWith(album: album.copyWith(sortMode: value as AlbumSortMode)),
       .albumIsReverse => copyWith(album: album.copyWith(isReverse: value as bool)),
       .albumIsGrid => copyWith(album: album.copyWith(isGrid: value as bool)),
+      .offlinePolicy => copyWith(offlinePolicy: value as String?),
+      .offlineWifiOnly => copyWith(offlineWifiOnly: value as bool),
+      .offlineStorageLimit => copyWith(offlineStorageLimit: value as int),
+      .offlinePaused => copyWith(offlinePaused: value as bool),
       .backupEnabled => copyWith(backup: backup.copyWith(enabled: value as bool)),
       .backupUseCellularForVideos => copyWith(backup: backup.copyWith(useCellularForVideos: value as bool)),
       .backupUseCellularForPhotos => copyWith(backup: backup.copyWith(useCellularForPhotos: value as bool)),
