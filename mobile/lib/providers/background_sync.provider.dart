@@ -6,6 +6,7 @@ import 'package:immich_mobile/infrastructure/repositories/offline_flags.reposito
 import 'package:immich_mobile/providers/api.provider.dart';
 import 'package:immich_mobile/providers/backup/backup.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/offline.provider.dart';
+import 'package:immich_mobile/providers/session_state.provider.dart';
 import 'package:immich_mobile/providers/sync_status.provider.dart';
 
 final backgroundSyncProvider = Provider<BackgroundSyncManager>((ref) {
@@ -53,12 +54,20 @@ final backgroundSyncProvider = Provider<BackgroundSyncManager>((ref) {
   return manager;
 });
 
-/// immich-sync fork: a finished remote sync is when the offline mirror catches up with what it brought in. A sync
-/// also fails on errors of its own, inside the isolate, so a failure counts as unreachable only when the server does
-/// not answer a ping either.
+/// immich-sync fork: a failed remote sync is how the app learns the server is unreachable (R2), and a finished one is
+/// when the offline mirror catches up with what it brought in. A sync also fails on errors of its own, inside the
+/// isolate, so a failure counts as unreachable only when the server does not answer a ping either.
 void _afterRemoteSync(Ref ref, {required bool synced, required Future<int?>? resetGeneration}) {
   unawaited(() async {
     final reachedServer = synced || await _serverAnswers(ref);
+    final sessionIssue = ref.read(sessionIssueProvider.notifier);
+    if (synced) {
+      sessionIssue.clear();
+    } else if (reachedServer) {
+      sessionIssue.reportReachable();
+    } else {
+      await sessionIssue.reportUnreachable();
+    }
     ref
         .read(offlineSyncServiceProvider)
         .afterRemoteSync(synced: synced, reachedServer: reachedServer, resetGeneration: await resetGeneration);

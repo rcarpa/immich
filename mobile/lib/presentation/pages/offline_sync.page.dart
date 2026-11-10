@@ -17,6 +17,7 @@ import 'package:immich_mobile/presentation/widgets/offline/offline_reclaim_dialo
 import 'package:immich_mobile/presentation/widgets/offline/quality_menu.widget.dart';
 import 'package:immich_mobile/providers/infrastructure/offline.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/settings.provider.dart';
+import 'package:immich_mobile/providers/session_state.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
 import 'package:immich_mobile/utils/bytes_units.dart';
 
@@ -639,6 +640,7 @@ class _Summary extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final issue = ref.watch(sessionIssueProvider);
     final storage = ref.watch(offlineStorageProvider).valueOrNull ?? OfflineStorage.empty;
 
     final available = storage.availableAssets;
@@ -737,6 +739,7 @@ class _Summary extends ConsumerWidget {
               ),
             ),
           ],
+          if (issue != null) ...[const SizedBox(height: 12), _SessionNote(issue: issue)],
           if (status.failed > 0) ...[
             const SizedBox(height: 8),
             Row(
@@ -781,6 +784,50 @@ class _Summary extends ConsumerWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Why nothing is downloading, when the session is the reason. Only an expired session is a control: it opens the login
+/// screen, logging nobody out (R2).
+class _SessionNote extends StatelessWidget {
+  const _SessionNote({required this.issue});
+
+  final SessionIssue issue;
+
+  @override
+  Widget build(BuildContext context) {
+    final (icon, text) = switch (issue) {
+      SessionIssue.offline => (Icons.wifi_off_rounded, 'No network. Downloads will resume.'),
+      SessionIssue.unreachable => (Icons.cloud_off_rounded, 'Server unreachable. Downloads will resume.'),
+      SessionIssue.expired => (Icons.login_rounded, 'Signed out on the server. Sign in to resume downloading.'),
+      SessionIssue.failed => (Icons.error_outline_rounded, 'Could not start syncing on this device. Restart the app.'),
+    };
+    final expired = issue == SessionIssue.expired;
+    final color = expired ? context.colorScheme.error : context.colorScheme.onSurfaceVariant;
+
+    final row = Row(
+      spacing: 8,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 16, color: color),
+        Expanded(
+          child: Text(
+            text,
+            style: context.textTheme.bodySmall?.copyWith(color: color, fontWeight: expired ? FontWeight.w600 : null),
+          ),
+        ),
+        if (expired) Icon(Icons.chevron_right_rounded, size: 16, color: color),
+      ],
+    );
+
+    if (!expired) {
+      return row;
+    }
+    return InkWell(
+      onTap: () => unawaited(context.pushRoute(const LoginRoute())),
+      borderRadius: const BorderRadius.all(Radius.circular(6)),
+      child: Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: row),
     );
   }
 }

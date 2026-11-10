@@ -1,4 +1,5 @@
-/// immich-sync fork: the offline button in the app bar, beside upstream's backup button.
+/// immich-sync fork: the offline button in the app bar, beside upstream's backup button. Also where an expired session
+/// shows on the main page (R2).
 library;
 
 import 'dart:async';
@@ -9,6 +10,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/domain/models/offline/offline.model.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/providers/infrastructure/offline.provider.dart';
+import 'package:immich_mobile/providers/session_state.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
 
 /// Matches upstream's `_kBadgeWidgetSize`, so the two buttons are one row.
@@ -20,7 +22,8 @@ class OfflineIndicator extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final status = ref.watch(offlineStatusProvider).valueOrNull;
-    final badge = _badge(context, status);
+    final issue = ref.watch(sessionIssueProvider);
+    final badge = _badge(context, status, issue);
 
     return IconButton(
       onPressed: () => unawaited(context.pushRoute(const OfflineSyncRoute())),
@@ -35,8 +38,21 @@ class OfflineIndicator extends ConsumerWidget {
     );
   }
 
-  Widget? _badge(BuildContext context, OfflineStatus? status) {
+  Widget? _badge(BuildContext context, OfflineStatus? status, SessionIssue? issue) {
     final iconColor = context.isDarkTheme ? Colors.white : Colors.black;
+
+    // First, even before the status loads. Only an expired session, the one state the user can act on.
+    if (issue == SessionIssue.expired) {
+      return _BadgeLabel(
+        Icon(
+          Icons.close_rounded,
+          size: 11,
+          color: context.colorScheme.error,
+          semanticLabel: 'Signed out on the server',
+        ),
+        backgroundColor: context.colorScheme.errorContainer,
+      );
+    }
 
     if (status == null) {
       return null;
