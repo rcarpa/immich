@@ -22,7 +22,14 @@ final permissionApiProvider = Provider<PermissionApi>((_) => PermissionApi());
 
 final connectivityApiProvider = Provider<ConnectivityApi>((_) => ConnectivityApi());
 
-final passkeyHostApiProvider = Provider<PasskeyHostApi>((_) => PasskeyHostApi());
+// immich-sync fork: the server takes passkeys only from apps Immich signs (its Android certificates and its Apple
+// team for my.immich.app), so this build reports none and the login button and settings section stay hidden.
+final passkeyHostApiProvider = Provider<PasskeyHostApi>((_) => _NoPasskeyHostApi());
+
+class _NoPasskeyHostApi extends PasskeyHostApi {
+  @override
+  Future<bool> isSupported() async => false;
+}
 
 final localImageApi = LocalImageApi();
 

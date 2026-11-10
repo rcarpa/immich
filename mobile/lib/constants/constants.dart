@@ -1,5 +1,9 @@
 import 'dart:io';
 
+// immich-sync fork: the app's name, and the one translated strings are renamed from.
+const String kAppName = "Mirrich";
+const String kUpstreamName = "Immich";
+
 const String kMobileMetadataKey = "mobile-app";
 
 // Number of log entries to retain on app start
